@@ -1,0 +1,98 @@
+---
+title: "newrmd"
+author: "Danty_Zhang"
+date: "2020/10/30"
+output: html_document
+---
+```{r packages}
+rm(list = ls())
+library(tidyr)
+library(sqldf)
+library(openxlsx)
+options(stringsAsFactors = F)
+library(stringr)
+options(scipen=200)
+# library(tidyverse)
+library(dplyr)
+library(readxl)
+library(sqldf)
+library(tableone)
+library("magrittr")
+library("tidyr")
+library("rlang")
+```
+
+```{r SLE labdat} 
+##screen for those with thyroid funtion test
+load(file="../6.labdat/final_labdat_SP_2w.Rdata")
+
+#select the lab test needed
+labitem<-read.xlsx("实验室检查_need.xlsx",sheet =1,rowNames = F)
+labitem<-labitem[labitem$need==1,]
+labitem<-na.omit(labitem)
+labitem<-labitem$BLH
+labitem<-c("BLH",labitem)
+nlabdat<-labdat_SP_2w[,labitem]
+```
+
+```{r SLE pdat}
+#retrieve uniqueID and remove duplicate, for the same patient only the first inpatient record were selected
+load(file="../1.rawdata/pdat.rdata")
+merge1<-merge(pdat,nlabdat,by = "BLH",all.x = T)
+merge1$InHospitalDate<-strptime(merge1$InHospitalDate,format="%Y-%m-%d %H:%M:%S")
+merge1$year<-lubridate::year(merge1$InHospitalDate)
+merge1$year<-as.factor(merge1$year)
+colnames(merge1)[4]<-"age"
+merge1$InHospitalDate<-as.character(merge1$InHospitalDate)
+first_visit<-sqldf("SELECT * FROM merge1 GROUP BY GivenName ORDER BY BLH ASC")
+```
+
+
+```{r SLE pdat}
+###
+man<-read.xlsx("SLE+肌炎病例组 匹配 2021.7.13.xlsx")
+man$BLH<-"NA"
+man$type<-"肌炎"
+man$year<-as.factor(man$year)
+noname<-man$GivenName
+first_visit<-first_visit[!first_visit$GivenName %in% noname,]
+match<-first_visit[,c("GivenName","sex","age","year","BLH")]
+match$type<-"非肌炎"
+table(names(match)==names(man))
+psmdat<-rbind(match,man)
+```
+
+
+```{r}
+library(MatchIt)
+set.seed(50)
+table(is.na(psmdat$year))
+psmdat$type<-as.logical(psmdat$type== '肌炎')
+table(psmdat$type)
+#PSM
+m.out <- matchit(data = psmdat,
+                 formula = type ~ age+sex+year,
+                 method = "nearest",
+                 distance = "logit",
+                 replace = FALSE,
+                 ratio = 2) #caliper = 0.05
+#匹配后样本数据
+summary(m.out)
+plot(m.out);plot(m.out,type="hist");plot(m.out,type="jitter",col=6)
+data_matched_female<-match.data(m.out)
+
+blhneed<-unique(data_matched_female$BLH)
+blhneed<-setdiff(blhneed,"NA")
+
+data_matched<-first_visit[first_visit$BLH %in% blhneed,]
+
+write.xlsx(data_matched,file="肌炎年份1比2匹配.xlsx") 
+```
+```{r}
+bc<-c("3000031473","3000089806","3000122736","3000167863")
+data_matched<-first_visit[first_visit$BLH %in% bc,]
+write.xlsx(data_matched,file="肌炎年份1比2匹配_bc20210914.xlsx") 
+
+
+```
+

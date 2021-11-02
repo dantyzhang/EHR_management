@@ -1,0 +1,176 @@
+---
+title: "newrmd"
+author: "Danty_Zhang"
+date: "2021/05/01"
+output: html_document
+---
+```{r }
+library(tidyr)
+library(sqldf)
+library(openxlsx)
+options(stringsAsFactors = F)
+```
+
+```{r}
+rm(list = ls())
+load(file="../2.diagdat/diag3_lupus_merge_fill1.Rdata")
+table(diaLupusneeded$`隐球菌`)
+diag_lupus_yqj<-diaLupusneeded[diaLupusneeded$`隐球菌`==1,]
+write.xlsx(diag_lupus_yqj,file="diag_yqj_blh.xlsx")
+
+nblh<-diag_lupus_yqj$BLH
+
+diag<-names(diaLupusneeded)
+
+load(file="../2.diagdat/diag4_SLEnonSLE.Rdata")
+SLE<-unique(diag_SLEnonSLE[diag_SLEnonSLE$SLE==1,]$BLH)
+noSLE<-unique(diag_SLEnonSLE[!diag_SLEnonSLE$SLE==1,]$BLH)
+alllab<-labdat_SP_2w$BLH
+nblh<-setdiff(alllab,noSLE) ##去掉出院诊断不是SLE的病人  53人，3000个人中53人诊断对不上
+```
+
+
+```{r 读入初步筛选过的病人}
+##姓名--病人信息及每次住院blh
+load(file="../1.rawdata/pdat.rdata")
+npdat<-pdat[pdat$BLH %in% nblh,] ##3000+人次的sle
+
+npdat<-sqldf("SELECT * FROM npdat ORDER BY GivenName,BLH")
+unique<-unique(npdat$GivenName)#1970
+
+
+# ###所有风湿科病人
+# npdat<-pdat[pdat$BLH %in% nraw_yqj,]
+# npdat<-sqldf("SELECT * FROM npdat ORDER BY GivenName,BLH")
+# unique(npdat$GivenName)#12
+# nraw_yqj
+# 
+# 
+# ###所有风湿科病人
+# npdat<-pdat[pdat$BLH %in% aps_yqj,]
+# npdat<-sqldf("SELECT * FROM npdat ORDER BY GivenName,BLH")
+# unique(npdat$GivenName)#12
+# nraw_yqj
+```
+
+```{r}
+
+```
+
+```{r 读入初步筛选过的病人}
+##每次住院blh对应的实验室检查
+
+load(file="../6.labdat/final_labdat_SP_2w.Rdata")
+
+nlabdat<-labdat_SP_2w[labdat_SP_2w$BLH %in% nblh,] ##用诊断中有狼疮的筛选，6110→3023观测
+
+labitem<-read.xlsx("实验室检查_need.xlsx",sheet =1,rowNames = F)
+labitem1<-labitem[grep("ESR|C-反应蛋白|铁蛋白_ng|血沉",labitem$BLH),]$BLH
+labitem2<-labitem[grep("RNP|Sm",labitem$BLH),]$BLH
+labitem2<-labitem2[grep("AI",labitem2)]
+labitem<-union(labitem1,labitem2)
+# labitem<-labitem[labitem$need==1,]
+labitem<-unique(labitem)
+
+labitem<-c("BLH",labitem)
+nlabdat<-nlabdat[,labitem] ##实验室检查
+labdat<-colnames(nlabdat)
+nlabdat<-na.omit(nlabdat)
+
+# setdiff(allBLM$BLH,nlabdat$BLH)
+ndat<-merge(nlabdat,npdat,by="BLH",all.x=T) #245 3000173154
+write.xlsx(ndat,file="RNP_无去重.xlsx")
+
+ndatdul<-sqldf("SELECT * FROM ndat GROUP BY GivenName") 
+write.xlsx(ndat,file="RNP_按照姓名去重.xlsx")
+```
+
+
+```{r}
+data<-read.xlsx("RNP_按照姓名去重_gai.xlsx")
+
+allvar<-names(data)
+dput(names(data))
+
+num<-allvar[grep("num",colnames(data))]
+bi<-allvar[grep("bi",colnames(data))]
+dput(bi)
+
+vars <- c("C-反应蛋白_mg/L_bi", "C-反应蛋白_mg/L_num", "铁蛋白_ng/mL_bi", "铁蛋白_ng/mL_num", 
+"抗RNP-68抗体_AI_bi", "抗RNP.A抗体_AI_bi",  "抗RNP抗体_AI_bi", "抗SmRNP抗体_AI_bi", "抗Sm抗体_AI_bi", "双阳", "GivenName", "sex", "Column1", "zfy", "yf", "hyf", "jcf")
+data<-data[,vars]
+
+factorvars<-c( "双阳","sex","C-反应蛋白_mg/L_bi", "铁蛋白_ng/mL_bi", "抗RNP-68抗体_AI_bi", 
+"抗RNP.A抗体_AI_bi", "抗RNP抗体_AI_bi", "抗SmRNP抗体_AI_bi", 
+"抗Sm抗体_AI_bi")
+
+data<-data[,vars]
+data[factorvars]<-lapply(data[factorvars],factor)
+data[setdiff(vars,factorvars)]<-lapply(data[setdiff(vars,factorvars)],as.numeric)
+str(data)
+
+```
+
+```{r}
+#---------------------1.table1_center---------------------
+library("tableone")
+a<-data
+attach(a)
+table <- CreateTableOne(vars = vars, strata = '双阳', factorVars = factorvars,data = a)
+table <- print(table, missing = TRUE,smd = TRUE,showAllLevels = TRUE,nonnormal =num)##exact=c("esrd","die","acl")#nonnormal = c( )
+table1 <- print(table, smd = TRUE)
+detach(a)
+write.csv(table1, file = "双阳.csv")
+```
+
+
+```{r}
+#---------------------1.table1_center---------------------
+library("tableone")
+a<-data
+attach(a)
+table <- CreateTableOne(vars = vars, strata = 'MDA5', factorVars = factorvars,data = a)
+table <- print(table, missing = TRUE,smd = TRUE,showAllLevels = TRUE)##exact=c("esrd","die","acl")#nonnormal = c( )
+table1 <- print(table, smd = TRUE)
+detach(a)
+write.csv(table1, file = "MDA5_pos_vs_neg_ttest.csv")
+```
+
+
+```{r non-normal}
+library("tableone")
+
+non_normal <- c(
+  "age",  "historyofln","sleduration", "symptom","elevatedcrtotreat","SLEDAI","Pred","recovertime",#numeric#epi_clinic
+  "ALB", "CR", "UP24H", "BNP", "ESR", "CRP", "IGG", "C3", "C4", "HB", "PLT","DD","RBC",#numeric#lab
+  "cellcrescent", "fibrocrescent", "sclerosis", "TIatrophy", "AI", "CI" #numeric#histo
+                )
+
+a<-data
+attach(a)
+table <- CreateTableOne(vars = vars, strata = 'Center', factorVars = factorvars,data = a)
+table <- print(table, missing = TRUE,smd = TRUE,showAllLevels = TRUE,nonnormal =non_normal
+                 )##exact=c("esrd","die","acl")#
+table1 <- print(table, smd = TRUE)
+detach(a)
+write.csv(table1, file = "all_center_non.csv")
+#---------------------2.center1_response---------------------
+a<-train1
+attach(a)
+table <- CreateTableOne(vars = vars, strata = 'response', factorVars = factorvars,data = a)
+table <- print(table, missing = TRUE,smd = TRUE,showAllLevels = TRUE,nonnormal =non_normal
+               )##exact=c("esrd","die","acl")#nonnormal = c( )
+table2 <- print(table, smd = TRUE)
+write.csv(table2, file = "center1_response_non.csv")
+detach(a)
+#---------------------3.center2_response----------------------
+a<-test1
+attach(a)
+table <- CreateTableOne(vars = vars, strata = 'response', factorVars = factorvars,data = a)
+table <- print(table, missing = TRUE,smd = TRUE,showAllLevels = TRUE,nonnormal =non_normal
+               )##exact=c("esrd","die","acl")#nonnormal = c( )
+table3 <- print(table, smd = TRUE)
+write.csv(table3, file = "center2_response_non.csv")
+detach(a)
+```
+

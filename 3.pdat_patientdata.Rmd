@@ -1,0 +1,69 @@
+---
+title: "newrmd"
+author: "Danty_Zhang"
+date: "2020/10/30"
+output: html_document
+---
+
+```{r }
+library(tidyr)
+library(sqldf)
+rm(list = ls())
+options(stringsAsFactors = F)
+library(stringr)
+options(scipen=200)
+library(lubridate)
+library(openxlsx)
+```
+
+
+```{r }
+load("../1.rawdata/pdat.rdata")
+load("../../SLEdatabase20201211mz/rawdat.Rdata")
+```
+
+
+```{r 时间变量处理}
+colnames(pdat)
+pdat$InHospitalDate<-ymd_hms(pdat$InHospitalDate)
+date1 <- ymd_hms("2017-1-1 00:00:01")
+date2 <- ymd_hms("2021-1-1 00:00:01")
+int <- interval(date1, date2)
+#获取2018-3-1 08:00:00到2018-3-1 17:00:00之间的第3-5列数据
+ZY1720 <- pdat[ymd_hms(pdat$InHospitalDate) %within% int,]
+write.xlsx(ZY1720,file="住院17-20.xlsx")
+
+mpdat$`挂号日期`<-ymd_hms(mpdat$`挂号日期`)
+date1 <- ymd_hms("2017-1-1 00:00:01")
+date2 <- ymd_hms("2021-1-1 00:00:01")
+int <- interval(date1, date2)
+
+#获取2018-3-1 08:00:00到2018-3-1 17:00:00之间的第3-5列数据
+mz1720 <- mpdat[ymd_hms(mpdat$`挂号日期`) %within% int,] #甲状
+mz1<-mz1720[grepl("甲状",mz1720$`诊断1`),]
+mz2<-mz1720[grepl("甲状",mz1720$`诊断2`),]
+mz3<-mz1720[grepl("甲状",mz1720$`诊断3`),]
+mz4<-mz1720[grepl("甲状",mz1720$`诊断4`),]
+mz5<-mz1720[grepl("甲状",mz1720$`诊断5`),]
+mz6<-mz1720[grepl("甲状",mz1720$`主诉`),]
+mz7<-mz1720[grepl("甲状",mz1720$`病史`),]
+# dput(paste("mz",1:6,sep = ""))
+digTD<-rbind(mz1,mz2,mz3,mz4,mz5,mz6,mz7)
+digTD<-sqldf("SELECT * FROM digTD GROUP BY 就诊序号")
+TDpat<-sqldf("SELECT * FROM digTD GROUP BY 病人唯一号")
+table(TDpat$`诊断1`)
+mz1720<-mz1720[grepl("甲状",mz1720$`科室`),]
+
+mz1720<-mz1720[grepl("风湿",mz1720$`科室`),]
+mz1720<-mz1720[grepl("狼疮",mz1720$`诊断1`),]
+mz1720<-sqldf("SELECT * FROM mz1720 GROUP BY 病人唯一号")
+write.xlsx(mz1720,file="门诊17-20.xlsx")
+write.xlsx(digTD,file="甲状腺相关诊断17-20.xlsx")
+
+```
+
+
+
+
+
+

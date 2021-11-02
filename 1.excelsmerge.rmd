@@ -1,0 +1,75 @@
+---
+title: "从狼疮数据库导入数据"
+author: "Danty_Zhang"
+date: "2020/10/30"
+output: html_document
+---
+```{r 加载包}
+library(readxl)
+options(stringsAsFactors = F)
+```
+
+```{r }
+# 读取该工作空间下的所有文件名
+filenamesall <- dir()
+
+# 通过正则，获取所有xlsx结尾的文件名,记得检查是否全部为xlsx后缀
+filenames <- grep('\\.xlsx', filenamesall, value = TRUE)
+filenames
+filenames<-filenames[3:35]
+```
+
+```{r}
+#########入院基线表pdat#####################
+# 初始化数据框，用于后面的数据合并
+pdat <- data.frame()
+#通过循环完成数据合并
+for (i in filenames){
+  # 构造数据路径
+  path <- paste0(getwd(),'\\',i)
+  #res <- c(res,path)
+  # 读取并合并数据
+  pdat <- rbind(pdat,read_excel(path = path,sheet = 'Table1'))
+}
+#write.table(pdat,file="patientdata.xls",sep = "\t")
+```
+
+```{r }
+####meddat医嘱数据########################
+orderdat <- data.frame()
+#通过循环完成数据合并
+for (i in filenames){
+  # 构造数据路径
+  path <- paste0(getwd(),'\\',i)
+  #res <- c(res,path)
+  # 读取并合并数据
+  orderdat <- rbind(orderdat,read_excel(path = path,sheet = 'Table2'))
+}
+#write.table(meddat,file="medorderdata.xls",sep = "\t")
+```
+
+
+```{r }
+####实验室检查labdat#######################
+labdat <- data.frame()
+#通过循环完成数据合并
+for (i in filenames){
+  # 构造数据路径
+  path <- paste0(getwd(),'\\',i)
+  #res <- c(res,path)
+  # 读取并合并数据
+  labdat <- rbind(labdat,read_excel(path = path,sheet = 'Table3'))
+}
+#write.table(labdat,file="laboratorydata.xls",sep = "\t") ##超出excel可接受范围
+
+sum(pdat$zfy)
+```
+
+```{r }
+save(labdat,pdat,orderdat,file = "threedat.rdata")  
+save(labdat,file = "labdat.rdata") #1352573
+save(pdat,file = "pdat.rdata") #6658
+save(orderdat,file = "orderdat.rdata") #518499
+```
+
+

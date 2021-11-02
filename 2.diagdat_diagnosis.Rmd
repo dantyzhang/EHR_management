@@ -1,0 +1,300 @@
+---
+title: "newrmd"
+author: "Danty_Zhang"
+date: "2020/10/30"
+output: html_document
+---
+
+```{r 一定要运行的环境变量..factor变成level的时候直接as.numeric会出问题}
+library(tidyr)
+library(pacman)
+library(readxl)
+library(sqldf)
+rm(list = ls())
+options(stringsAsFactors = F)
+```
+
+####14_diaLupusneeded-诊断-----------------------
+
+```{r 全院诊断,储存为diagnosis_fill1}
+# diagnosis<-read.csv(file="./rawdata/1.风湿科出院诊断13-202009.csv",header=TRUE) 
+diagnosis<-read_xlsx(path = "./rawdata/2.风湿出院诊断91112f.xlsx",sheet=1,col_names = TRUE) 
+names(diagnosis)
+diagnosis<-diagnosis[,c("BLH","diagnosis","是否存在")]
+# [1] "BLH"       "性别"      "生日"      "入院日"    "出院日"    "ICD"       "diagnosis"
+# [8] "是否存在"  "诊断序号" 
+
+diagnosis<-sqldf("SELECT * FROM diagnosis GROUP BY BLH,diagnosis,是否存在")
+
+save(diagnosis,file="diag1_rawdat.Rdata")
+A<-as.data.frame(table(diagnosis$diagnosis)) # 1616
+##信息科的rawdata,为本院所有风湿科病人出院诊断--13年到2020年九月份为止
+
+diagnosis <- diagnosis[,c("BLH","diagnosis","是否存在")] %>% spread(key = diagnosis, value = 是否存在) ##数据透视 此步骤要去重
+
+diagnosislistall<-as.data.frame(colnames(diagnosis)) #
+write.csv(diagnosislistall,file="1.diagnosislitsall.csv") ##编辑13.diagnosislitsall.csv
+##1616种诊断
+#诊断列表
+diagnosis[is.na(diagnosis)]<-0
+save(diagnosis,file="diag2_all_fill1.Rdata")
+```
+
+
+```{r diagall merge}
+library(tidyr)
+rm(list = ls())
+options(stringsAsFactors = F)
+
+load("diag2_all_fill1.Rdata")
+diagnosislistall<-as.data.frame(colnames(diagnosis)) #
+##all patients diag merge
+options(stringsAsFactors = F) ##一定要运行这个
+diamerge<-read.csv(file="4.diagnosislitsall_merge_edit.csv",header=TRUE)##手工编辑
+diamerge<-diamerge[,-1]
+colnames(diamerge)[1]<-"DIALIST"
+table(diagnosislistall$`colnames(diagnosis)` %in% diamerge$DIALIST) ##检查是否都在
+
+diag_merge_all<-diagnosis
+newdiacol<-function(f){
+  colname<-paste(f,"merge",sep = "_")
+  a<-apply(diag_merge_all[,diamerge[which(diamerge[,f]==1),]$DIALIST],1,sum)
+  newcol<-as.data.frame(a)
+  colnames(newcol)<-colname
+  diag_merge_all<-cbind(diag_merge_all,newcol)
+}
+
+dput(colnames(diamerge[2:64])) 
+
+for(i in c("LN", "TMA","急慢肾功能不全", "急性肾功能不全", 
+"肺动脉高压", "心肌炎orSLE心肌病", "冠心病", "心功能不全", "传导阻滞", 
+"心内膜炎", "高血压", "VPO", "癫痫", "NPSLE", "贫血", 
+"ITP", "白细胞异常",  "APS", "出血", "消化道出血", 
+"浆膜炎", "血栓", "带状疱疹", "感染", "胸腔积液all", "肺部感染or肺炎", 
+"间肺", "SLE肺出血or肺炎", "呼吸衰竭", "结核or非", "病毒", "细菌", 
+"真菌", "隐球菌", "寄生虫", "诺卡", "乙肝病毒感染", "肝功能不全", 
+"自免肝", "骨折_骨质疏松", "AVN", "甲状腺结节or肿物", "甲减", 
+"甲状腺炎", "甲癌", "甲状腺术后_", "甲亢", 
+"甲旁减", "糖尿病", "痛风", "RA", "大动脉炎", "肌炎", "硬皮", 
+"血管炎", "干燥", "白塞", "银屑病关节炎")){diag_merge_all<-newdiacol(i)}
+
+
+##超香之合并诊断~~~成功
+# dia_all_selected<-c("BLH",colnames(diag_merge_all[,673:728]),HBV,TD,"低蛋白血症","全血细胞减少","胸腔积液","类风湿性关节炎","大动脉炎","噬血细胞综合征","单纯疱疹病毒感染","血栓性血小板减少性紫癜")
+
+#把大于1的值都换成1，用于后续统计
+rownames(diag_merge_all) <- diag_merge_all[,1]
+diag_merge_all[diag_merge_all>=1] <- 1
+diag_merge_all$BLH <- rownames(diag_merge_all)
+
+# diag_merge_all_selected <- diag_merge_all[,diaallneeded]
+
+save(diag_merge_all,file="ALL_diagmerge.Rdata") ##
+# save(diaLupusneeded,file="diag_ALL_merge_fill1.Rdata")
+
+# rownames(diaallLC)<-diaallLC$BLH
+diag_merge_all<-diag_merge_all[,!colnames(diag_merge_all)=="BLH"]  #删除病历号
+count_diag_all<-apply(diag_merge_all,2,sum)
+count_all_diagm<-as.data.frame(t(rbind(colnames(diag_merge_all),count_diag_all))) #
+count_all_diagm$count_diag_all<-as.numeric(count_all_diagm$count_diag_all) ######!!!!此处有巨坑！！！！,options(stringsAsFactors = F)会把变量变成factor,as.numeric 呜呜呜
+str(count_all_diagm)
+count_all_diagm<-count_all_diagm[order(count_all_diagm$count_diag_all,decreasing = T),]
+save(count_all_diagm,file="count_ALL_diagm.Rdata")
+write.csv(count_all_diagm,"count_all_diagm.csv")
+```
+
+```{r 绘制全院诊断词云,去掉RA AS SLE}
+pacman::p_load(wordcloud2)  
+count_all_cloud<-count_all_diagm[count_all_diagm$count_diag_all>20,]
+rownames(count_all_cloud)[1:50]
+count_all_cloud<-count_all_cloud[-c(1,2,3,5,10,11,12,22,23),]
+library(stringr)
+count_all_cloud$V1<-str_replace_all(count_all_cloud$V1,"_merge","")
+wordcloud2(count_all_cloud, size = 1) 
+```
+
+截止2020年9月，风湿科共有1378种不同的诊断要进行归类,比如同样是ITP有很多种诊断可以表示，得到诊断归类,此归类需要大家考证,以便于后续做共病的分析及调取某一个亚类的病人
+
+```{r 一定要运行的环境变量..factor变成level的时候直接as.numeric会出问题}
+library(tidyr)
+library(pacman)
+rm(list = ls())
+options(stringsAsFactors = F)
+```
+
+####14_diaLupusneeded-诊断-----------------------
+
+```{r 全院诊断,储存为diagnosis_fill1}
+diagnosis<-read.csv(file="./rawdata/1.风湿科出院诊断13-202009.csv",header=TRUE) 
+save(diagnosis,file="diag1_rawdat.Rdata")
+##信息科的rawdata,为本院所有风湿科病人出院诊断--13年到2020年九月份为止
+diagnosis <- diagnosis[,c(1,3,4)] %>% spread(key = diagnosis, value = 是否存在) ##数据透视
+diagnosislistall<-as.data.frame(colnames(diagnosis)) #
+write.csv(diagnosislistall[-1379,],file="1.diagnosislitsall.csv") ##编辑13.diagnosislitsall.csv
+##1378种诊断
+#诊断列表
+diagnosis[is.na(diagnosis)]<-0
+save(diagnosis,file="diag2_all_fill1.Rdata")
+```
+
+##抓取某一类诊断的病人--以SLE为例
+```{r }  
+load("diag2_all_fill1.Rdata")
+rownames(diagnosis)<-diagnosis$BLH
+diagnosis<-diagnosis[,-1]
+head(diagnosis)
+diaLCcol<-diagnosis[,c(grep("狼疮",colnames(diagnosis)))]  #取出带有SLE诊断的人
+colnames(diaLCcol)##取出带有狼疮两个字的诊断及对应的BLH
+diaLC<-diaLCcol[!apply(diaLCcol,1,sum)==0,]#取出至少有一个带狼疮诊断的BLH,apply求和不等于0的病人就是SLE病人
+diaLC$BLH<-rownames(diaLC)
+```
+
+```{r  diagBLHSLE--SLE与非SLE}
+diagnosis$BLH<-rownames(diagnosis)
+BLH<-diagnosis[,"BLH"]
+diag_SLEnonSLE<-as.data.frame(BLH)
+diag_SLEnonSLE$SLE<-ifelse(diag_SLEnonSLE[,"BLH"] %in% diaLC$BLH,1,0)
+##形成SLE非SLEgroup,用于超声数据统计分组
+table(diag_SLEnonSLE$SLE) #3244人次SLE患者
+save(diag_SLEnonSLE,file="diag_SLEnonSLE.Rdata")
+```
+
+```{r 对于诊断SLE的患者进行诊断合并}
+diaallLC<-as.data.frame(diagnosis[diaLC$BLH,]) ##取出带SLE诊断的所有病例号,diagnosis$BLH %in% 
+LC<-diaallLC[,c(grep("狼疮",colnames(diaallLC)))]
+colnames(LC) 
+# rownames(diaallLC)<-diaallLC$BLH
+diaallLC<-diaallLC[,-1379]  #删除病历号
+diaallLC<-diaallLC[,!apply(diaallLC,2,sum)==0] ##留下671种SLE病人的诊断，到这里
+count_diag<-apply(diaallLC,2,sum)
+count_diagm<-as.data.frame(t(rbind(colnames(diaallLC),count_diag))) #
+count_diagm$count_diag<-as.numeric(count_diagm$count_diag) ######!!!!此处有巨坑！！！！,options(stringsAsFactors = F)会把变量变成factor,as.numeric 呜呜呜
+str(count_diagm)
+count_diagm<-count_diagm[order(count_diagm$count_diag,decreasing = T),]
+write.csv(count_diagm,"2.countBLH_diagm.csv")
+```
+
+
+```{r 吐血代码整理}
+#SLE患者的诊断列表
+diagnosislist<-as.data.frame(colnames(diaallLC));View(diagnosislist)##671 种诊断
+colnames(diagnosislist)<-"DIALIST"
+write.csv(diagnosislist,file="3.diagnosislitsSLE.csv") ##
+##检验
+diaallLC$BLH<-rownames(diaallLC)
+table(diaallLC[,"狼疮性肾炎"]) #1089
+
+##对13.diagnosislitsSLE.csv进行手工归类
+options(stringsAsFactors = F) ##一定要运行这个
+diamerge<-read.csv(file="4.diagnosislitsall_merge_edit.csv",header=TRUE)##手工编辑
+diamerge<-diamerge[,-1]
+colnames(diamerge)[1]<-"DIALIST"
+table(diagnosislist$DIALIST %in% diamerge$DIALIST) ##检查是否都在
+
+HBV<-dput(diagnosislist[grep("乙型|乙肝",diagnosislist[,1]),])
+#HCV<-dput(diagnosislist[grep("丙",diagnosislist[,1]),]) 没有丙肝的数据
+TD<-dput(diagnosislist[grep("甲状",diagnosislist[,1]),])
+dput(diagnosislist[grep("低蛋白血症",diagnosislist[,1]),])  #"大动脉炎"
+dput(diagnosislist[grep("大动脉",diagnosislist[,1]),])  
+
+#"低蛋白血症" "全血细胞减少" "胸腔积液" "类风湿性关节炎" "大动脉炎"
+
+##狼疮和总表诊断匹配
+diahave<-merge(diagnosislist,diamerge,by="DIALIST",x.all=T) #671 匹配
+colnames(diahave)
+# diahave<-diahave[,c(-1,-2)]
+# diahave[is.na(diahave)]<-0
+# apply(diahave,2,sum)
+
+newdiacol<-function(f){
+  colname<-paste(f,"merge",sep = "_")
+  a<-apply(diaallLC[,diahave[which(diahave[,f]==1),]$DIALIST],1,sum)
+  newcol<-as.data.frame(a)
+  colnames(newcol)<-colname
+  diaallLC<-cbind(diaallLC,newcol)
+}
+
+dput(colnames(diahave[2:64])) 
+
+for(i in c("LN", "TMA",  "急慢肾功能不全", "急性肾功能不全", 
+"肺动脉高压", "心肌炎orSLE心肌病", "冠心病", "心功能不全", "传导阻滞", 
+"心律失常快", "心内膜炎", "高血压", "VPO", "癫痫", "NPSLE", "贫血", 
+"ITP", "白细胞异常",  "APS", "出血", "消化道出血", 
+"浆膜炎", "血栓", "带状疱疹", "感染",  "肺部感染or肺炎", 
+"间肺", "SLE肺出血or肺炎", "呼吸衰竭", "结核or非", "病毒", "细菌", 
+"真菌", "隐球菌", "寄生虫", "诺卡", "乙肝病毒感染", "肝功能不全", 
+"自免肝", "骨折_骨质疏松", "AVN", "甲状腺结节or肿物", "甲减", 
+"甲状腺炎", "甲功异常",  "甲亢", 
+ "糖尿病", "痛风",   "肌炎", "硬皮", 
+"血管炎", "干燥", "白塞", "银屑病关节炎", "重叠_SLE")){diaallLC<-newdiacol(i)}
+
+# ####测试##########################
+# colname<-paste("TMA","merge",sep = "_")
+# a<-apply(diaallLC[,diamerge[which(diamerge[,"TMA"]==1),]$DIALIST],1,sum)
+# newcol<-as.data.frame(a)
+# colnames(newcol)<-colname
+# diaallLC<-cbind(diaallLC,newcol)
+# ###################################
+
+##超香之合并诊断~~~成功
+diaallneeded<-c("BLH","系统性红斑狼疮",colnames(diaallLC[,673:727]),HBV,TD,"低蛋白血症","全血细胞减少","胸腔积液","类风湿性关节炎","大动脉炎","噬血细胞综合征","单纯疱疹病毒感染","血栓性血小板减少性紫癜")
+
+diaLupusneeded <- diaallLC[,diaallneeded]
+##setdiff(diaallneeded,colnames(diaallLC)) 小管间质在LN中不诊断...
+a<-diaLupusneeded[!diaLupusneeded$`系统性红斑狼疮`,]
+#把大于1的值都换成1，用于后续统计
+rownames(diaLupusneeded) <- diaLupusneeded[,1]
+diaLupusneeded[diaLupusneeded>=1] <- 1
+diaLupusneeded$BLH <- rownames(diaLupusneeded)
+
+write.csv(diaLupusneeded,file="5.BLHlupus_diag.csv") ##
+colnames(diaLupusneeded)
+save(diaLupusneeded,file="diag_lupus_merge_fill1.Rdata")
+```
+
+
+```{r  诊断的比例韦恩图}
+diaLupvenn<-diaLupusneeded
+colnames(diaLupvenn)
+diaLupvenn<-diaLupvenn[,-1]
+diaLupvenn<-diaLupvenn[,-1]
+diaLupvennNE<-diaLupvenn[,apply(diaLupvenn,2,sum)>=100]
+table(diaLupusneeded$`重叠_SLE_merge`)
+paste(colnames(diaLupvennNE),collapse = ",")
+library(sqldf)
+diaLupvennNEcount <-  sqldf("SELECT *,count(*) FROM diaLupvennNE GROUP BY LN_merge,急慢肾功能不全_merge,肺动脉高压_merge,心功能不全_merge,高血压_merge,VPO_merge,NPSLE_merge,贫血_merge,ITP_merge,APS_merge,血栓_merge,感染_merge,肺部感染or肺炎_merge,肝功能不全_merge,骨折_骨质疏松_merge,AVN_merge,糖尿病_merge,重叠_SLE_merge")
+colnames(diaLupvennNEcount)
+diavennNEmore<- diaLupvennNEcount[diaLupvennNEcount$`count(*)`>=30,]
+write.csv(diavennNEmore,file="6.Venn.csv") ##
+```
+
+
+```{r  画比例韦恩图}
+library(eulerr)
+fit <- euler(c("SLE"=1095,
+               "SLE&高血压"=18,
+               "SLE&肺动脉高压"=65,
+               "SLE&肺动脉高压&心功能不全"=12,
+               "SLE&NPSLE"=76,
+               "SLE&狼疮性肾炎"=404
+               ),
+             shape = "ellipse")
+plot(fit)
+```
+
+
+```{r 顾姐AOSD or MAS}
+
+# 成年型斯蒂尔病/成人斯蒂尔病/嗜血
+
+rownames(diagnosis)<-diagnosis$BLH
+diaAOSDcol<-diagnosis[,grep("成年型|成人|噬血",colnames(diagnosis))]  #取出带有SLE诊断的人
+diaAOSDcol$sum<-apply(diaAOSDcol,1,sum)
+diaAOSDcol<-diaAOSDcol[diaAOSDcol$sum>=1,]
+diaAOSDcol$BLH<-rownames(diaAOSDcol)
+load("../4.uniqueID/uniqueid.rdata")
+diaAOSD<-merge(diaAOSDcol,uniqueid,by="BLH",all.x = T)
+write.csv(diaAOSD,file="diaAOSDorMAS.csv")
+```
+
+

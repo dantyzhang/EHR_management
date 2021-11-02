@@ -1,0 +1,1825 @@
+---
+title: "newrmd"
+author: "Danty_Zhang"
+date: "2020/10/30"
+output: html_document
+---
+
+```{r }
+library(tidyr)
+library(sqldf)
+rm(list = ls())
+options(stringsAsFactors = F)
+library(stringr)
+options(scipen=200)
+```
+
+```{r  运行后保存为labdat1}
+load("../1.rawdata/labdat.rdata")
+
+names(labdat)
+labdat<-sqldf("SELECT * FROM labdat GROUP BY BLH,PublishDate,ItemId,ItemName,ItemValue,ItemUnit,BandRange")
+
+labdat<-labdat[!is.na(labdat$BLH),]
+labdat[is.na(labdat)]<-"null"  ###这步很重要
+
+##确认所有检查
+alllabtest<-sqldf("SELECT * FROM labdat GROUP BY ItemId,ItemName,ItemUnit,BandRange")
+alllabtest$labID<-paste(alllabtest$ItemName,alllabtest$ItemUnit,sep = "_")
+write.csv(alllabtest,file="alltest.csv")
+
+##解决过敏的括号问题
+labdat$ItemName<-str_replace_all(labdat$ItemName,'（','(')
+labdat$ItemName<-str_replace_all(labdat$ItemName,'）',')')
+labdat$ItemName<-str_replace_all(labdat$ItemName,"IgG型",'IgG')
+labdat$ItemName<-str_replace_all(labdat$ItemName,"IgE型",'IgG')  
+
+##括号问题>统一
+labdat$BandRange<-str_replace_all(labdat$BandRange,'＜','<')
+labdat$BandRange<-str_replace_all(labdat$BandRange,'＞','>')
+labdat$BandRange<-str_replace_all(labdat$BandRange,'（','(')
+labdat$BandRange<-str_replace_all(labdat$BandRange,'）',')')
+labdat$BandRange<-str_replace_all(labdat$BandRange,'＝','=')
+labdat$BandRange<-str_replace_all(labdat$BandRange,'>=','≥')
+labdat$BandRange<-str_replace_all(labdat$BandRange,'<=','≤')
+labdat$BandRange<-str_replace_all(labdat$BandRange,'：',':')
+labdat$BandRange<-str_replace_all(labdat$BandRange,'＋','+')
+labdat$BandRange<-str_replace_all(labdat$BandRange,'－','-')
+
+###/l及/L
+labdat$BandRange<-str_replace_all(labdat$BandRange,'/l','/L')
+
+##≤or≥
+labdat$ItemValue<-str_replace_all(labdat$ItemValue,'＜','<')
+labdat$ItemValue<-str_replace_all(labdat$ItemValue,'＞','>')
+labdat$ItemValue<-str_replace_all(labdat$ItemValue,'（','(')
+labdat$ItemValue<-str_replace_all(labdat$ItemValue,'）',')')
+labdat$ItemValue<-str_replace_all(labdat$ItemValue,'＝','=')
+labdat$ItemValue<-str_replace_all(labdat$ItemValue,'>=','≥')
+labdat$ItemValue<-str_replace_all(labdat$ItemValue,'<=','≤')
+labdat$ItemValue<-str_replace_all(labdat$ItemValue,'：',':')
+labdat$ItemValue<-str_replace_all(labdat$ItemValue,'＋','+')
+labdat$ItemValue<-str_replace_all(labdat$ItemValue,'－','-')
+labdat$ItemValue<-str_replace_all(labdat$ItemValue,'\\+-','±')
+
+#value/name 提示样品失败
+labdat<-labdat[!grepl("样本少|重抽|重做|重留|重送|脂|凝|不做|不判断|退费|--|细胞少|细胞极少|干扰|无法|标本|复查|错误|贫血|污染|未做|未检|未测|溶血|!|内标未起|\\*\\*|\\*00|ERRL|Failed iQC|ERRS|No Result|cnc|血少|血小板聚集|尿量不详|无地址",labdat$ItemValue),] # "-"  去掉这些行--是不存在-是阴性,不要弄错
+labdat<-labdat[!grepl("重留",labdat$ItemName),]
+
+#change<-labdat[!labdat$ItemValue=="null",] # "-"  去掉这些行--是不存在-是阴性,不要弄错
+
+#CIE
+change<-labdat[grepl("CIE",labdat$ItemId),]
+change$ItemName<-paste(change$ItemName,"CIE",sep = "_")
+nochangelab<-labdat[!grepl("CIE",labdat$ItemId),]
+labdat<-rbind(change,nochangelab)
+
+#IBT
+change<-labdat[grepl("IBT",labdat$ItemId),]
+change$ItemName<-paste(change$ItemName,"IBT",sep = "_")
+nochangelab<-labdat[!grepl("IBT",labdat$ItemId),]
+labdat<-rbind(change,nochangelab)
+
+#mdt可以检索-AI
+change<-labdat[grepl("拷贝/ml",labdat$ItemUnit),]  #不能grep括号
+change$ItemUnit<-"copies/mL"
+nochangelab<-labdat[!grepl("拷贝/ml",labdat$ItemUnit),]
+labdat<-rbind(change,nochangelab)
+
+#细菌培养更名
+XJPY<-labdat[grepl("细菌培养未生长",labdat$ItemName),]
+XJPY$ItemName<-"一般细菌培养"	
+XJPY$ItemValue<-"未生长"	
+labnoXJPY<-labdat[!grepl("细菌培养未生长",labdat$ItemName),]
+labdat<-rbind(XJPY,labnoXJPY)
+
+#ABCB1 3435C>T_NA换名字
+change<-labdat[grepl("ABCB1 3435C>T",labdat$ItemName),]
+change$ItemName<-"ABCB1 (3435 C>T)"	
+nochangelab<-labdat[!grepl("ABCB1 3435C>T",labdat$ItemName),]
+labdat<-rbind(change,nochangelab)
+
+#CRP单位都一样
+change<-labdat[grepl("C-反应蛋白",labdat$ItemName),]
+change$ItemUnit<-"mg/L"
+change$BandRange<-"0--8"
+nochangelab<-labdat[!grepl("C-反应蛋白",labdat$ItemName),]
+labdat<-rbind(change,nochangelab)
+
+#EB病毒DNA(游离)
+change<-labdat[grepl("EB病毒DNA.游离.",labdat$ItemName),]
+change$ItemName<-"EB病毒DNA"	
+nochangelab<-labdat[!grepl("EB病毒DNA.游离.",labdat$ItemName),]
+labdat<-rbind(change,nochangelab)
+
+#value改一下
+change<-labdat[grepl("HLA-B27",labdat$ItemName),]
+change$ItemValue<-str_replace_all(change$ItemValue,'阴性.-.','阴性')
+nochangelab<-labdat[!grepl("HLA-B27",labdat$ItemName),]
+labdat<-rbind(change,nochangelab)
+
+
+#丁肝
+change<-labdat[labdat$ItemName=="丁肝-IgM(万泰)",]
+change1<-change[change$ItemUnit=="S/CO",]
+change1$ItemValue<-ifelse(change1$ItemValue<1,"阴性","阳性")
+change2<-change[!change$ItemUnit=="S/CO",]
+change<-rbind(change1,change2)
+nochangelab<-labdat[!labdat$ItemName=="丁肝-IgM(万泰)",]
+labdat<-rbind(change,nochangelab)
+
+#甲肝
+change<-labdat[labdat$ItemName=="甲肝抗体",]
+change1<-change[change$ItemUnit=="S/CO",]
+change1$ItemValue<-ifelse(change1$ItemValue<0.8,"阴性",ifelse(change1$ItemValue>1.2,"阳性","弱阳性"))
+change2<-change[!change$ItemUnit=="S/CO",]
+change<-rbind(change1,change2)
+nochangelab<-labdat[!labdat$ItemName=="甲肝抗体",]
+labdat<-rbind(change,nochangelab)
+
+change<-labdat[labdat$ItemId=="EKT-5M",]
+change$ItemName<-"革兰阴性菌脂多糖(鲎)"	
+change$ItemUnit<-"EU/ml"
+change$BandRange<-"小于0.053EU/ml为阴性；|0.053~0.109EU/ml是疑似结果，建议临床监控并及时复查；|大于0.109EU/ml为阳性"
+nochangelab<-labdat[!labdat$ItemId=="EKT-5M",]
+labdat<-rbind(change,nochangelab)
+
+change<-labdat[labdat$ItemName=="抗蛋白酶3抗体IGG",]
+change$ItemName<-"抗蛋白酶3抗体IgG"
+change$ItemUnit<-"IU/mL"
+nochangelab<-labdat[!labdat$ItemName=="抗蛋白酶3抗体IGG",]
+labdat<-rbind(change,nochangelab)
+
+
+change<-labdat[labdat$ItemName=="a-淀粉酶",]
+change$BandRange<-"28--100"
+nochangelab<-labdat[!labdat$ItemName=="a-淀粉酶",]
+labdat<-rbind(change,nochangelab)
+
+```
+
+ "BLH"  "PublishDate" "ItemId" "ItemName" "ItemValue"  "ItemUnit"  "BandRange" 
+156	3000037668	2015-05-07 15:32:04	CD19+	B细胞(CD3-CD19+)	3.18	NA	NA  
+157	3000037993	2015-05-13 00:29:17	CD19+	B细胞(CD3-CD19+)	41	%	7.3--18.2%
+
+```{r nametoname}
+#itemname to itemname
+nametoname<-function(a,b){
+change<-labdat[labdat$ItemName==a,]
+change$ItemName<-b
+nochangelab<-labdat[!labdat$ItemName==a,]
+labdat<-rbind(change,nochangelab)
+labdat<-labdat[!is.na(labdat$BLH),]
+}
+
+labdat<-nametoname("白蛋白(急)","白蛋白") 
+labdat<-nametoname("白色念珠菌","白色假丝酵母") 
+labdat<-nametoname("白念珠菌","白色假丝酵母") 
+labdat<-nametoname("部分凝血活酶时间","部分凝血酶原时间") 
+labdat<-nametoname("胆碱酯酶(急)","胆碱酯酶") 
+labdat<-nametoname("谷氨酰转肽酶(急)","谷氨酰转肽酶") 
+labdat<-nametoname("谷丙转氨酶(急)","谷丙转氨酶") 
+labdat<-nametoname("谷草转氨酶","谷草转氨酶(急)") 
+labdat<-nametoname("光滑假丝酵母","光滑念珠菌") 
+labdat<-nametoname("环孢素A(CO)","环孢素A(C0)")
+labdat<-nametoname("环丙沙星(CIP)","环丙沙星") 
+labdat<-nametoname("黄曲霉复合体","黄曲霉")
+labdat<-nametoname("肌酐(急)","肌酐")
+labdat<-nametoname("钾(急)","钾")
+labdat<-nametoname("碱性磷酸酶(急)","碱性磷酸酶")
+labdat<-nametoname("近平滑假丝酵母","近平滑念珠菌") 
+labdat<-nametoname("抗甲状腺过氧化物酶","抗甲状腺过氧化物酶抗体") 
+labdat<-nametoname("氯(急)","氯") 
+labdat<-nametoname("梅毒非特异性抗体","梅毒螺旋体非特异性抗体") 
+labdat<-nametoname("梅毒特异性抗体","梅毒特异抗体") 
+labdat<-nametoname("葡萄糖(急)","葡萄糖") #4.1--5.9,3.6--6.1
+labdat<-nametoname("雄烯二酮测定","雄烯二酮测定(空腹)")
+labdat<-nametoname("总胆红素(急)","总胆红素")
+labdat<-nametoname("铁蛋白(稀释)","铁蛋白")
+labdat<-nametoname("尿酸(急)","尿酸")
+labdat<-nametoname("钠(急)","钠")
+labdat<-nametoname("β人绒毛膜促性腺激素(稀释)","β人绒毛膜促性腺激素") 
+labdat<-nametoname("β-人绒毛促性腺激素(稀释)","β人绒毛膜促性腺激素")
+labdat<-nametoname("滴虫","滴虫感染")
+labdat<-nametoname("IgG-Beta2GP1抗体","抗Beta2GP1抗体-IgG")
+labdat<-nametoname("IgM-Beta2GP1抗体","抗Beta2GP1抗体-IgM")
+labdat<-nametoname("AMA","抗线粒体抗体AMA")
+labdat<-nametoname("线粒体抗体(AMA)","抗线粒体抗体AMA")
+labdat<-nametoname("a-淀粉酶","淀粉酶")
+labdat<-nametoname("ASMA","抗平滑肌抗体(ASMA)")
+labdat<-nametoname("尿白蛋白/肌酐比值","尿ACR(0-3)")
+labdat<-nametoname("ACA-IgG","抗心磷脂ACA-IgG")
+labdat<-nametoname("ACA-IgM","抗心磷脂ACA-IgM")
+labdat<-nametoname("AMH评估","卵巢功能储备AMH")
+labdat<-nametoname("AMA-M2","抗线粒体-M2型抗体")
+labdat<-nametoname("抗线粒体抗体M2型","抗线粒体-M2型抗体")
+# labdat<-nametoname("","")
+# labdat<-nametoname("","")
+
+##要在改bandrange之前
+```
+
+```{r }
+save(labdat,file = "labdat1.Rdata")  #1297451
+
+load(file = "labdat1.Rdata")
+labtest1<-sqldf("SELECT * FROM labdat GROUP BY ItemId,ItemName,ItemUnit,BandRange")
+labtest1$labID<-paste(labtest1$ItemName,labtest1$ItemUnit,sep = "_") #1464
+```
+
+```{r idtoname}
+#itmeid to itemname  
+idtoname<-function(a,b){
+change<-labdat[labdat$ItemId==a,]
+change$ItemName<-b
+nochangelab<-labdat[!labdat$ItemId==a,]
+labdat<-rbind(change,nochangelab)
+}
+labdat<-idtoname("BD-B","白细胞（高倍视野）")  #白细胞
+labdat<-idtoname("DD1","DD1_滴度1_阴性")
+labdat<-idtoname("ANA.DD","ANA.DD_滴度1")
+labdat<-idtoname("DD2","DD2_滴度2_阴性")
+labdat<-idtoname("ANA.DD2","ANA.DD2_滴度2")
+labdat<-idtoname("DD3","DD3_滴度3_阴性")
+labdat<-idtoname("ANA.DD3","ANA.DD3_滴度3")
+labdat<-idtoname("ANA.HX","ANA.HX_核型")
+labdat<-idtoname("HX1","HX1_核型1")
+labdat<-idtoname("HX2","HX2_核型2")
+labdat<-idtoname("CK","CK_肌酸激酶")
+labdat<-idtoname("AVM","甲肝抗体")
+labdat<-idtoname("CK-MB","肌酸激酶同功酶")
+# labdat<-idtoname("","")
+# labdat<-idtoname("","")
+
+# change<-labdat[labdat$ItemId=="CK",]
+```
+
+
+```{r NAMEtoUnit}
+NAMEtoUnit<-function(a,b){
+change<-labdat[labdat$ItemName==a,]
+change$ItemUnit<-b
+nochangelab<-labdat[!labdat$ItemName==a,]
+labdat<-rbind(change,nochangelab)
+}
+labdat<-NAMEtoUnit("EB病毒DNA","copies/mL")
+labdat<-NAMEtoUnit("促甲状腺激素","mIU/L") 
+labdat<-NAMEtoUnit("地高辛","μg/L") 
+labdat<-NAMEtoUnit("分类计数细胞数","只") #??
+labdat<-NAMEtoUnit("高敏C反应蛋白","mg/L")
+labdat<-NAMEtoUnit("革兰阴性菌脂多糖(鲎)","EU/ml")
+labdat<-NAMEtoUnit("肌钙蛋白","ng/ml")  ##单位
+labdat<-NAMEtoUnit("角蛋白19片段","ng/ml")
+labdat<-NAMEtoUnit("酵母菌","/ul")
+labdat<-NAMEtoUnit("结核杆菌DNA","copies/mL") #阴性
+labdat<-NAMEtoUnit("结核抗体","菌")  
+labdat<-NAMEtoUnit("镜检霉菌","/HP") 
+labdat<-NAMEtoUnit("巨细胞病毒DNA","copies/mL") 
+labdat<-NAMEtoUnit("梅毒螺旋体抗体","S/CO")
+labdat<-NAMEtoUnit("真菌(1-3)-β-D葡聚糖","pg/ml")
+labdat<-NAMEtoUnit("艾滋病病毒抗体","S/CO")
+labdat<-NAMEtoUnit("F-Actin","IU")
+labdat<-NAMEtoUnit("甲肝抗体","S/CO")
+labdat<-NAMEtoUnit("乙肝核心抗体IgM","S/CO")
+labdat<-NAMEtoUnit("乙肝表面抗原","IU/ml")
+labdat<-NAMEtoUnit("透明管型","/LP")
+labdat<-NAMEtoUnit("三碘甲状腺原氨酸","nmol/L")
+
+# test<-labdat_bi_time[labdat_bi_time$ItemName=="三碘甲状腺原氨酸",]
+# unique(test$ItemUnit)
+# labdat<-NAMEtoUnit("","")
+
+```
+
+```{r IDtoUnit}
+IDtoUnit<-function(a,b){
+change<-labdat[labdat$ItemId==a,]
+change$ItemUnit<-b
+nochangelab<-labdat[!labdat$ItemId==a,]
+labdat<-rbind(change,nochangelab)
+}
+
+labdat<-IDtoUnit("CK","U/L")
+# labdat<-IDtoUnit("","")
+# labdat<-IDtoUnit("","")
+```
+
+```{r Contacting Delphi...the oracle?报错}
+change<-labdat[labdat$ItemName=="T细胞(CD3+)",]
+change$BandRange<-"61.1--77"
+nochangelab<-labdat[!labdat$ItemName=="T细胞(CD3+)",]
+labdat<-rbind(change,nochangelab)
+
+change<-labdat[labdat$ItemName=="总T细胞(CD3+)",]
+change$BandRange<-"56--76"
+nochangelab<-labdat[!labdat$ItemName=="总T细胞(CD3+)",]
+labdat<-rbind(change,nochangelab)
+```
+
+ [1] "酵母菌"             "白细胞（高倍视野）" "镜检管型"           "有核细胞数"        
+ [5] "红细胞"             "脑脊液白细胞数"     "白细胞数量"         "上皮细胞数量"   
+ 
+```{r}
+idtobandrange<-function(a,b){
+change<-labdat[labdat$ItemId==a,]
+change$BandRange<-b
+nochangelab<-labdat[!labdat$ItemId==a,]
+labdat<-rbind(change,nochangelab)
+}
+
+labdat<-idtobandrange("ACL.IgG","<12阴性")
+labdat<-idtobandrange("ACL.IgM","<12阴性")
+```
+
+```{r name to bandrange}
+nametobandrange<-function(a,b){
+change<-labdat[labdat$ItemName==a,]
+change$BandRange<-b
+nochangelab<-labdat[!labdat$ItemName==a,]
+labdat<-rbind(change,nochangelab)
+}
+
+labdat<-nametobandrange("ANA","阴性")
+labdat<-nametobandrange("ACTH","0--46")
+labdat<-nametobandrange("eGFR-EPI","≥90")
+labdat<-nametobandrange("anti-dsDNA","0--7阴性")  ##因试剂批号更新,2013-4-3起结果与前有差
+labdat<-nametobandrange("I型单纯疱疹病毒IgG","<1(-)")
+labdat<-nametobandrange("II型单纯疱疹病毒IgG","<1(-)")
+labdat<-nametobandrange("Th细胞(CD3＋CD4＋)","25.8--41.6")  #25.8--41.6  25.8--41.6% 25.8%--41.6%
+labdat<-nametobandrange("Ts细胞(CD3+CD8+)","18.1--29.6")
+labdat<-nametobandrange("T细胞(CD3+)","61.1--77")
+labdat<-nametobandrange("艾滋病病毒Ab/Ag","<1(-)")
+labdat<-nametobandrange("艾滋病病毒抗体","<1(-)")
+labdat<-nametobandrange("单核细胞","3-10")
+labdat<-nametobandrange("淋巴细胞","20-40")
+labdat<-nametobandrange("B细胞(CD3-CD19+)","7.3--18.2")	
+labdat<-nametobandrange("CD16+56(NK)","9--21") #15+-6
+labdat<-nametobandrange("CD3","56--76") #66±10%   复查
+labdat<-nametobandrange("总T细胞(CD3+)","56--76") #66±10%  复查
+labdat<-nametobandrange("CD4","35--53") #44±9% 
+labdat<-nametobandrange("CD8","24--38") #	31±7%
+labdat<-nametobandrange("降钙素原","PCT~0.1 无细菌感染，避免使用抗生素，6~24小时后监控PCT|0.1~0.25  可能无细菌感染，不建议使用抗生素，6~24小时后监控PCT|0.25~0.5  可能有细菌感染，建议使用抗生素|PCT大于等于0.5  存在细菌感染，强烈建议使用抗生素||")
+labdat<-nametobandrange("抗肾小球基底膜IgG抗体","<1")
+labdat<-nametobandrange("血小板最大聚集率","AA:40~80|ADP:30~70|COL:30~70|EPI:30~69")
+labdat<-nametobandrange("有核红细胞百分比","0--1") #??0--1/100个白细胞.原始范围
+labdat<-nametobandrange("丙戊酸","50--100")#
+labdat<-nametobandrange("睾酮","男6.07~27.12;女性0.34~2.6")
+labdat<-nametobandrange("皮质醇","AM:6.7~22.6ug/dl|PM:小于10") ##看时间定高低
+labdat<-nametobandrange("总胆汁酸","0--10")
+labdat<-nametobandrange("卡马西平","4--12")#最佳药物浓度4--12
+labdat<-nametobandrange("β人绒毛膜促性腺激素","绝经前~小于2.9mIU/ml|绝经后~小于5.6")#＜0.5--2.9
+##18-40岁：0-0.6mIU/ml|>40岁：0-3.1mIU/ml|绝经后：0.1-11.6
+labdat<-nametobandrange("β-胶原特殊序列","女绝经前30~537|绝经后 113~1008")#
+labdat<-nametobandrange("垂体泌乳素","绝经前3.34~26.7μg/L|绝经后2.74~19.64μg/L")#
+labdat<-nametobandrange("雌二醇","卵泡期 99.1~447.9pmol/L||排卵期 348.8~1589.5pmol/L||黄体期 179.9~1068pmol/L||绝经期 73.4~146.8pmol/L//男：73.4~172 ")#  有一个单位是	73.4--172.5 确定的？？
+labdat<-nametobandrange("促黄体生成素","卵泡期2.0~12.0 IU/L|排卵期19~109 IU/L|黄体期1.2~12.9 IU/L|绝经后10.9~58.6 IU/L")#
+labdat<-nametobandrange("单纯疱疹1型IgG抗体","无反应性:小于0.6|不确定性:0.6~1.0|有反应性:大于1.0")
+labdat<-nametobandrange("单纯疱疹2型IgG抗体","无反应性:小于0.6|不确定性:0.6~1.0|有反应性:大于1.0")
+labdat<-nametobandrange("单核细胞","3-10")
+labdat<-nametobandrange("低密度脂蛋白","健康人群小于3.4|高危人群小于2.59|极高危人群小于2.07 ")
+labdat<-nametobandrange("骨钙素","男性:|18~29岁 24~70|30~50岁 14~42|51~70岁 14~46|女性绝经前|大于20岁:11.00~43.00 |绝经后:15.00~46.00 ")
+labdat<-nametobandrange("甲肝抗体","阴性(0~0.79)|弱阳性(0.8~1.2)|阳性(大于1.2)")
+labdat<-nametobandrange("卵泡生成素","卵泡期 3.9~8.8IU/L|排卵期 4.5~22.5IU/L|黄体期 1.8~5.1IU/L|绝经期 16.7~113.6IU/L")
+labdat<-nametobandrange("清洁度","Ⅰ~Ⅱ")
+labdat<-nametobandrange("生长激素","男性0~10岁:94~6290|    11~17岁:77~10800|   20~79岁:3~2470|女性0~10岁:120~7790|   11~17岁:123~8050|   21~77岁:126~9880")	
+labdat<-nametobandrange("嗜中性粒细胞","50-70")	
+labdat<-nametobandrange("戊肝IgG抗体","阴性(0~1)|阳性(大于1)")	
+labdat<-nametobandrange("戊肝IgM抗体","阴性(0~0.79)|弱阳性（0.8~1.2）|阳性(大于1.2)")	
+labdat<-nametobandrange("孕酮","卵泡期0.64~3.82nmol/L |排卵期1.91~8.27nmol/L |黄体期18.44~70.28nmol/L|绝经期0.64~2.86nmol/L")	
+labdat<-nametobandrange("真菌(1-3)-β-D葡聚糖","小于100.5pg/ml为阴性；|100.5~151.5pg/ml是疑似结果，建议临床监控并及时复查；|大于151.5pg/ml为阳性。")	
+labdat<-nametobandrange("F-Actin","0--20")
+labdat<-nametobandrange("丁肝-IgM(万泰)","<1")	
+labdat<-nametobandrange("高荧光网织红细胞","0.0-2.4") ##0.0-2.3	
+labdat<-nametobandrange("结核杆菌DNA","<500")
+labdat<-nametobandrange("抗线粒体抗体AMA","<1:100 阴性")
+labdat<-nametobandrange("透明管型","0--1")
+labdat<-nametobandrange("尿胆原","≤3.2")
+# labdat<-nametobandrange("","")
+# labdat<-nametobandrange("","")
+# labdat<-nametobandrange("","")
+# labdat<-nametobandrange("","")
+# labdat<-nametobandrange("","")
+# labdat<-nametobandrange("","")
+
+```
+
+#LDH 差距大
+723	1000000219	2012-12-21 17:50:37	LDH	乳酸脱氢酶	135	U/L	109--245	乳酸脱氢酶_U/L
+1297	3000017683	2014-02-16 23:03:32	jzLDH	乳酸脱氢酶(急)	347	U/L	313--618	乳酸脱氢酶(急)_U/L
+1318	3000016661	2014-02-02 15:17:16	jzldh	乳酸脱氢酶(急)	731	U/L	313--618	乳酸脱氢酶(急)_U/L
+
+
+3000029845	2014-11-13 15:28:50	NR	牛肉(IgG)	<50	U/ml	0--50	牛肉(IgG)_U/ml
+1358	3000029845	2014-11-13 15:29:16	nr	牛肉(IgG)	0(分级 0)	IU/ml	0--0.34	牛肉(IgG)_IU/ml
+
+
+1283	3000068900	2016-08-19 00:42:33	jzAMY	淀粉酶(急)	154	U/L	32--641	淀粉酶(急)_U/L
+1307	3000002289	2013-03-03 02:32:40	jzamy	淀粉酶(急)	132	U/L	30--110	淀粉酶(急)_U/L
+1308	3000002289	2013-03-03 02:09:02	jzamy	淀粉酶(急)	33	U/L	32--641	淀粉酶(急)_U/L
+101	3000000773	2013-01-21 18:32:05	AMY	淀粉酶	121	U/L	30--110	淀粉酶_U/L
+
+##要分男女
+1071	3000037189	2015-04-22 18:40:41	TESTO	睾酮	0.40	nmol/L	0.34--2.6	睾酮_nmol/L
+1072	3000080264	2017-01-06 23:29:46	TESTO	睾酮	18.17	nmol/L	6.07--27.1	睾酮_nmol/L
+##脑脊液
+328	3000002176	2013-03-01 23:29:40	CSFIGM	脑脊液球蛋白M	0.066	mg/dl	0--0.13	脑脊液球蛋白M_mg/dl
+329	3000014692	2013-11-27 22:37:42	CSFIGM	脑脊液球蛋白M	2.39	mg/l	0--1.3	脑脊液球蛋白M_mg/l
+
+##换算
+载脂蛋白E_mg/dL   载脂蛋白E_mg/L
+
+##DD单位转化
+0--600	D-二聚体_ng/ml；0-0.55	D-二聚体测定_mg/L
+
+##
+0-4.6	TNF-a_pg/ml
+0-2.31	TNF-a_pg/ml
+
+##
+0--40	α-L-岩藻糖苷酶_U/L
+7--28	α-L-岩藻糖苷酶_U/L
+
+
+#
+<400	EB病毒DNA_copies/mL
+<5000	EB病毒DNA_copies/mL
+
+#
+<1000	丙肝病毒RNA_IU/ml
+<15	丙肝病毒RNA_IU/mL
+
+##
+#???怎么区分???
+静脉血气和动脉血气
+	二氧化碳分压
+
+# 分类变量
+肌钙蛋白I 好多参考范围
+
+#
+接近棒杆菌_菌
+杰氏棒杆菌_菌
+
+#
+单位差距大的指标
+
+TSH的单位到底是啥？？？先按照mIU/L
+846	3000015739	2013-12-30 21:43:03	TSH	促甲状腺激素	0.74	mIU/L	0.34--5.6	促甲状腺激素_mIU/L
+847	3000013066	2013-10-08 19:12:09	TSH	促甲状腺激素	1.51	mIU/ml	0.34--5.6	促甲状腺激素_mIU/ml
+848	1000000219	2012-12-24 18:20:08	TSH	促甲状腺激素	4.58	uIU/ml	0.25--5	促甲状腺激素_uIU/ml
+
+```{r}
+save(labdat,file = "labdat2.Rdata")  ##labdat1297451
+labtest2<-sqldf("SELECT * FROM labdat GROUP BY ItemId,ItemName,ItemUnit,BandRange")
+labtest2$labID<-paste(labtest2$ItemName,labtest2$ItemUnit,sep = "_")
+```
+
+```{r 大小于符号}
+load(file="labdat2.Rdata")
+#	&lt;=
+change<-labdat[grepl("&lt;=",labdat$ItemValue),]
+change$ItemValue<-str_replace_all(change$ItemValue,"&lt;=",'≤')
+nochangelab<-labdat[!grepl("&lt;=",labdat$ItemValue),]
+labdat<-rbind(change,nochangelab)
+
+change<-labdat[grepl("&lt;",labdat$ItemValue),]
+change$ItemValue<-str_replace_all(change$ItemValue,"&lt;",'<')
+nochangelab<-labdat[!grepl("&lt;",labdat$ItemValue),]
+labdat<-rbind(change,nochangelab)
+
+#	&gt;=
+change<-labdat[grepl("&gt;=",labdat$ItemValue),]
+change$ItemValue<-str_replace_all(change$ItemValue,"&gt;=",'≥')
+nochangelab<-labdat[!grepl("&gt;=",labdat$ItemValue),]
+labdat<-rbind(change,nochangelab)
+
+change<-labdat[grepl("&gt;",labdat$ItemValue),]
+change$ItemValue<-str_replace_all(change$ItemValue,"&gt;",'>')
+nochangelab<-labdat[!grepl("&gt;",labdat$ItemValue),]
+labdat<-rbind(change,nochangelab)
+
+#	&lt;=
+change<-labdat[grepl("&lt;=",labdat$BandRange),]
+change$BandRange<-str_replace_all(change$BandRange,"&lt;=",'≤')
+nochangelab<-labdat[!grepl("&lt;=",labdat$BandRange),]
+labdat<-rbind(change,nochangelab)
+
+change<-labdat[grepl("&lt;",labdat$BandRange),]
+change$BandRange<-str_replace_all(change$BandRange,"&lt;",'<')
+nochangelab<-labdat[!grepl("&lt;",labdat$BandRange),]
+labdat<-rbind(change,nochangelab)
+
+#	&gt;=
+change<-labdat[grepl("&gt;=",labdat$BandRange),]
+change$BandRange<-str_replace_all(change$BandRange,"&gt;=",'≥')
+nochangelab<-labdat[!grepl("&gt;=",labdat$BandRange),]
+labdat<-rbind(change,nochangelab)
+
+change<-labdat[grepl("&gt;",labdat$BandRange),]
+change$BandRange<-str_replace_all(change$BandRange,"&gt;",'>')
+nochangelab<-labdat[!grepl("&gt;",labdat$BandRange),]
+labdat<-rbind(change,nochangelab)
+```
+
+```{r  labdat3.Rdata}
+save(labdat,file = "labdat3.Rdata")
+```
+
+```{r}
+load(file="labdat3.rdata")
+labtest3<-sqldf("SELECT * FROM labdat GROUP BY ItemId,ItemName,ItemUnit,BandRange")
+labtest3$labID<-paste(labtest3$ItemName,labtest3$ItemUnit,sep = "_")
+```
+
+```{r bandrange to bandrange 改动要谨慎}
+# LN
+change<-labdat[labdat$ItemName=="LN",]
+change$BandRange<-str_replace_all(change$BandRange,' ng/ml','')
+nochangelab<-labdat[!labdat$ItemName=="LN",]
+labdat<-rbind(change,nochangelab)
+
+# PIIINP
+change<-labdat[labdat$ItemName=="PIIINP",]
+change$BandRange<-str_replace_all(change$BandRange," ng/ml",'')
+nochangelab<-labdat[!labdat$ItemName=="PIIINP",]
+labdat<-rbind(change,nochangelab)
+
+#巨细胞病毒IgG抗体
+change<-labdat[labdat$ItemName=="巨细胞病毒IgG抗体",]
+change$BandRange<-str_replace_all(change$BandRange,"阳性：≥1.0",'阴性：<1.0')
+nochangelab<-labdat[!labdat$ItemName=="巨细胞病毒IgG抗体",]
+labdat<-rbind(change,nochangelab)
+
+change<-labdat[labdat$ItemName=="巨细胞病毒IgM抗体",]
+change$BandRange<-str_replace_all(change$BandRange,"阳性：≥1.0",'阴性：<1.0')
+nochangelab<-labdat[!labdat$ItemName=="巨细胞病毒IgM抗体",]
+labdat<-rbind(change,nochangelab)
+
+#TPMT*3 (T>C)
+change<-labdat[grepl("TPMT",labdat$ItemName),]
+change$ItemName<-"TPMT*3 (T>C)"
+nochangelab<-labdat[!grepl("TPMT",labdat$ItemName),]
+labdat<-rbind(change,nochangelab)
+
+#NK细胞(CD3+CD16+CD56+)
+change<-labdat[grepl("NK细胞.CD3",labdat$ItemName),]
+change$ItemName<-"NK细胞(CD3-CD16+CD56+)"  ##CD3-???
+change$BandRange<-"8.1--25.6"
+nochangelab<-labdat[!grepl("NK细胞.CD3",labdat$ItemName),]
+labdat<-rbind(change,nochangelab)
+
+# 白蛋白_g/L  单位为null的白蛋白
+change<-labdat[labdat$ItemName=="白蛋白",]
+change1<-change[change$BandRange=="null",]
+change1$ItemName<-"白蛋白不明单位"
+change2<-change[!change$BandRange=="null",]
+change<-rbind(change1,change2)
+nochangelab<-labdat[!labdat$ItemName=="白蛋白",]
+labdat<-rbind(change,nochangelab)
+
+# 氯 单位为null
+change<-labdat[labdat$ItemName=="氯",]
+change1<-change[change$BandRange=="null",]
+change1$ItemName<-"氯不明单位"
+change2<-change[!change$BandRange=="null",]
+change<-rbind(change1,change2)
+nochangelab<-labdat[!labdat$ItemName=="氯",]
+labdat<-rbind(change,nochangelab)
+
+# 肌酐无单位  单位为null  不改出大事
+change<-labdat[labdat$ItemName=="肌酐",]
+change1<-change[change$BandRange=="null",]
+change1$ItemName<-"肌酐_无单位(体液)"
+change2<-change[!change$BandRange=="null",]
+change<-rbind(change1,change2)
+nochangelab<-labdat[!labdat$ItemName=="肌酐",]
+labdat<-rbind(change,nochangelab)
+
+# 分压和肌炎相关联
+change<-labdat[labdat$ItemName=="二氧化碳分压",]
+change1<-change[change$BandRange=="null",]
+change1$ItemName<-"二氧化碳分压_静脉"
+change2<-change[!change$BandRange=="null",]
+change<-rbind(change1,change2)
+nochangelab<-labdat[!labdat$ItemName=="二氧化碳分压",]
+labdat<-rbind(change,nochangelab)
+
+
+# 降钙素
+change<-labdat[labdat$ItemName=="降钙素",]
+change1<-change[change$BandRange=="男<9.52;女<6.4",]
+change1$BandRange<-"男小于9.52;女小于6.4"
+change2<-change[!change$BandRange=="男<9.52;女<6.4",]
+change<-rbind(change1,change2)
+nochangelab<-labdat[!labdat$ItemName=="降钙素",]
+labdat<-rbind(change,nochangelab)
+
+# 降钙素
+change<-labdat[labdat$ItemName=="降钙素",]
+change1<-change[change$BandRange=="男<8.4;女<5.0",]
+change1$BandRange<-"男小于8.4;女小于5.0"
+change2<-change[!change$BandRange=="男<8.4;女<5.0",]
+change<-rbind(change1,change2)
+nochangelab<-labdat[!labdat$ItemName=="降钙素",]
+labdat<-rbind(change,nochangelab)
+
+# 降钙素
+change<-labdat[labdat$ItemName=="降钙素",]
+change1<-change[change$BandRange=="0--5",]
+change1$BandRange<-"男小于8.4;女小于5.0"
+change2<-change[!change$BandRange=="0--5",]
+change<-rbind(change1,change2)
+nochangelab<-labdat[!labdat$ItemName=="降钙素",]
+labdat<-rbind(change,nochangelab)
+
+# 降钙素
+change<-labdat[labdat$ItemName=="降钙素",]
+change1<-change[change$BandRange=="0--8.4",]
+change1$BandRange<-"男小于8.4;女小于5.0"
+change2<-change[!change$BandRange=="0--8.4",]
+change<-rbind(change1,change2)
+nochangelab<-labdat[!labdat$ItemName=="降钙素",]
+labdat<-rbind(change,nochangelab)
+
+# 降钙素
+change<-labdat[labdat$ItemName=="降钙素",]
+change1<-change[change$BandRange=="0--6.4",]
+change1$BandRange<-"男小于9.52;女小于6.4"
+change2<-change[!change$BandRange=="0--6.4",]
+change<-rbind(change1,change2)
+nochangelab<-labdat[!labdat$ItemName=="降钙素",]
+labdat<-rbind(change,nochangelab)
+
+# 降钙素
+change<-labdat[labdat$ItemName=="降钙素",]
+change1<-change[change$BandRange=="0--9.52",]
+change1$BandRange<-"男小于9.52;女小于6.4"
+change2<-change[!change$BandRange=="0--9.52",]
+change<-rbind(change1,change2)
+nochangelab<-labdat[!labdat$ItemName=="降钙素",]
+labdat<-rbind(change,nochangelab)
+
+#	抗髓过氧化物酶抗体
+change<-labdat[labdat$ItemName=="抗髓过氧化物酶抗体",]
+change1<-change[change$ItemUnit=="null",]
+change1$ItemUnit<-"IU/mL"
+change2<-change[!change$ItemUnit=="null",]
+change<-rbind(change1,change2)
+nochangelab<-labdat[!labdat$ItemName=="抗髓过氧化物酶抗体",]
+labdat<-rbind(change,nochangelab)
+
+
+#	B细胞
+change<-labdat[labdat$ItemName=="B细胞(CD3-CD19+)",]
+change1<-change[change$ItemUnit=="null",]
+change1$ItemUnit<-"%"
+change2<-change[!change$ItemUnit=="null",]
+change<-rbind(change1,change2)
+nochangelab<-labdat[!labdat$ItemName=="B细胞(CD3-CD19+)",]
+labdat<-rbind(change,nochangelab)
+
+#前把A-淀粉酶替换
+# 淀粉酶
+change<-labdat[labdat$ItemName=="淀粉酶(急)",]
+change1<-change[change$BandRange=="32--641",]
+change1$ItemName<-"尿淀粉酶"
+change2<-change[!change$BandRange=="32--641",]
+change<-rbind(change1,change2)
+nochangelab<-labdat[!labdat$ItemName=="淀粉酶(急)",]
+labdat<-rbind(change,nochangelab)
+
+# 肝肾微粒体抗体
+change<-labdat[labdat$ItemName=="肝肾微粒体抗体(LKM-1)",]
+change1<-change[change$BandRange=="阴性",]
+change1$BandRange<-"<45 阴性"
+change2<-change[!change$BandRange=="阴性",]
+change<-rbind(change1,change2)
+nochangelab<-labdat[!labdat$ItemName=="肝肾微粒体抗体(LKM-1)",]
+labdat<-rbind(change,nochangelab)
+
+#过敏源
+change<-labdat[grepl("\\(IgG\\)",labdat$ItemName),]
+change$ItemName<-paste("过敏源",change$ItemName,sep="_")
+nochangelab<-labdat[!grepl("\\(IgG\\)",labdat$ItemName),]
+labdat<-rbind(change,nochangelab)
+
+#过敏源
+change<-labdat[grepl("\\(IgE\\)",labdat$ItemName),]
+change$ItemName<-paste("过敏源",change$ItemName,sep="_")
+nochangelab<-labdat[!grepl("\\(IgE\\)",labdat$ItemName),]
+labdat<-rbind(change,nochangelab)
+
+# anti-dsDNA
+change<-labdat[labdat$ItemName=="anti-dsDNA",]
+change$ItemName<-"抗anti-dsDNA"  ##顺序最后
+change$ItemValue<- str_replace_all(change$ItemValue,'已复','')
+nochangelab<-labdat[!labdat$ItemName=="anti-dsDNA",]
+labdat<-rbind(change,nochangelab)
+```
+
+
+```{r labdat4}
+save(labdat,file = "labdat4.Rdata") #1102891 ##最终版labdat
+# test<-sqldf("SELECT * FROM test ORDER BY ItemValue")
+```
+
+PARTII对原始值进行标注
+
+```{r }
+library(tidyr)
+library(sqldf)
+rm(list = ls())
+options(stringsAsFactors = F)
+library(stringr)
+options(scipen=200)
+```
+
+```{r 所有要改动数据从labdat走，labdat_bi为最终合并}
+load(file="labdat4.rdata")
+labdat_bi<-data.frame()
+# labtest4<-sqldf("SELECT * FROM labdat GROUP BY ItemId,ItemName,ItemUnit,BandRange")
+# labtest4$labID<-paste(labtest4$ItemName,labtest4$ItemUnit,sep = "_")
+```
+
+```{r 科学计数法}
+nochange<-labdat[!grepl("E\\+|e\\+",labdat$ItemValue),]
+change<-labdat[grepl("E\\+|e\\+",labdat$ItemValue),]
+change$ItemValue<-str_replace_all(change$ItemValue,'E','e') #科学计数法转化为小e
+change$ItemValue<-str_replace_all(change$ItemValue,'\\(','') 
+change$ItemValue<-str_replace_all(change$ItemValue,'\\)','') 
+change$ItemValue<-str_replace_all(change$ItemValue,'可疑','') 
+change$ItemValue<-as.numeric(change$ItemValue) 
+labdat<-rbind(change,nochange)
+```
+
+```{r 保留数值的ANA}
+test1<-labdat[grepl("ANA",labdat$ItemName),]
+test2<-labdat[grepl("抗核抗体",labdat$ItemName),]
+test1<-rbind(test1,test2)
+unique(test1$ItemName)
+test1$ItemName<-str_replace_all(test1$ItemName,"ANA(核型1)","ANA")
+test1$ItemName<-str_replace_all(test1$ItemName,"ANA.DD_滴度1","ANA")
+test1$ItemName<-str_replace_all(test1$ItemName,"ANA滴度","ANA")
+test1$ItemName<-str_replace_all(test1$ItemName,"抗核抗体测定","ANA")
+test1<-test1[test1$ItemName=="ANA",]
+
+test1$ItemValue<-str_replace_all(test1$ItemValue,"均质1:1000阳性阴性","阳性")
+test1a<-test1[grepl("1:80|1:40|阴性|-|_",test1$ItemValue),]
+test1a$ItemValue<-"NEG"
+test1b<-test1[!grepl("1:80|1:40|阴性|-|_",test1$ItemValue),]
+test1b$ItemValue<-"POS"
+
+test<-rbind(test1a,test1b)
+test$ItemUnit<-paste(test$ItemUnit,"bi",sep="_")
+labdat_bi<-rbind(test,labdat_bi)
+```
+
+```{r 减负ANA}
+labdat<-labdat[!grepl("ANA",labdat$ItemName),]
+labdat<-labdat[!grepl("抗核抗体",labdat$ItemName),]
+testdat<-labdat[labdat$BandRange=="阴性",];unique(testdat$ItemName);unique(testdat$ItemValue)
+
+test<-testdat[grepl("\\(\\-\\)|阴性",testdat$ItemValue),] ##仅对-或--
+test$ItemValue<-"NEG"
+test$ItemUnit<-paste(test$ItemUnit,"bi",sep="_")
+labdat_bi<-rbind(test,labdat_bi)
+
+test<-testdat[testdat$ItemValue=="-",] ##仅对-或--
+test$ItemValue<-"NEG"
+test$ItemUnit<-paste(test$ItemUnit,"bi",sep="_")
+labdat_bi<-rbind(test,labdat_bi)
+
+test<-testdat[grepl("弱阳|±|Low Positive",testdat$ItemValue),]
+test$ItemValue<-"POS_WEEK"
+test$ItemUnit<-paste(test$ItemUnit,"bi",sep="_")
+labdat_bi<-rbind(test,labdat_bi)
+
+test<-testdat[grepl("\\+|阳性|Medium Positive",testdat$ItemValue),] 
+test<-test[!grepl("弱阳",test$ItemValue),]#差点选错
+test$ItemValue<-"POS"
+test$ItemUnit<-paste(test$ItemUnit,"bi",sep="_")
+labdat_bi<-rbind(test,labdat_bi) #80865
+
+unique(labdat_bi$ItemName);unique(labdat_bi$ItemValue) 
+```
+
+```{r 减负ANA}
+labdat<-labdat[!grepl("ANA",labdat$ItemName),]
+labdat<-labdat[!grepl("抗核抗体",labdat$ItemName),]
+testdat<-labdat[labdat$BandRange=="阴性(-)",];unique(testdat$ItemName);unique(testdat$ItemValue)
+
+test<-testdat[grepl("\\(\\-\\)|阴性",testdat$ItemValue),] ##仅对-或--
+test$ItemValue<-"NEG"
+test$ItemUnit<-paste(test$ItemUnit,"bi",sep="_")
+labdat_bi<-rbind(test,labdat_bi)
+
+test<-testdat[testdat$ItemValue=="-",] ##仅对-或--
+test$ItemValue<-"NEG"
+test$ItemUnit<-paste(test$ItemUnit,"bi",sep="_")
+labdat_bi<-rbind(test,labdat_bi)
+
+test<-testdat[grepl("弱阳|±|Low Positive",testdat$ItemValue),] 
+test$ItemValue<-"POS_WEEK"
+test$ItemUnit<-paste(test$ItemUnit,"bi",sep="_")
+labdat_bi<-rbind(test,labdat_bi)
+
+test<-testdat[grepl("\\+|阳性|Medium Positive",testdat$ItemValue),] 
+test<-test[!grepl("弱阳",test$ItemValue),]#差点选错
+test$ItemValue<-"POS"
+test$ItemUnit<-paste(test$ItemUnit,"bi",sep="_")
+labdat_bi<-rbind(test,labdat_bi)
+
+unique(labdat_bi$ItemName);unique(labdat_bi$ItemValue)
+```
+
+
+```{r null}
+null<-labdat[labdat$BandRange=="null",];unique(testdat$ItemName);unique(testdat$ItemValue)
+
+test<-null[grepl("\\(\\-\\)|阴性",null$ItemValue),] ##对-不能直接换会出问题，负数
+test$ItemValue<-"NEG"
+test$ItemUnit<-paste(test$ItemUnit,"bi",sep="_")
+labdat_bi<-rbind(test,labdat_bi)
+
+test<-null[null$ItemValue=="-",] ##仅对-或--
+test$ItemValue<-"NEG"
+test$ItemUnit<-paste(test$ItemUnit,"bi",sep="_")
+labdat_bi<-rbind(test,labdat_bi)
+
+test<-null[null$ItemValue=="5801-5801-",] ##仅对-或--
+test$ItemValue<-"NEG"
+test$ItemUnit<-paste(test$ItemUnit,"bi",sep="_")
+labdat_bi<-rbind(test,labdat_bi)
+
+test<-null[grepl("弱阳|±|Low Positive",null$ItemValue),] ;unique(test$ItemValue)
+test$ItemValue<-"POS_WEEK"
+test$ItemUnit<-paste(test$ItemUnit,"bi",sep="_")
+labdat_bi<-rbind(test,labdat_bi)
+
+test<-null[grepl("阳性|Medium Positive|\\+|KD",null$ItemValue),];unique(test$ItemValue)
+test<-test[!grepl("弱阳",test$ItemValue),]#差点选错,阳性的组合拳
+test$ItemValue<-"POS"
+test$ItemUnit<-paste(test$ItemUnit,"bi",sep="_")
+labdat_bi<-rbind(test,labdat_bi) 
+#131762
+
+null<-null[!grepl("\\(\\-\\)|阴性|弱阳|±|Low Positive|阳性|Medium Positive|\\+|KD",null$ItemValue),]
+null<-null[!null$ItemValue=="-",]
+null<-null[!null$ItemValue=="5801-5801-",]
+
+chan_df<-null
+nochange<-chan_df[!grepl("≥|>|≤|<",chan_df$ItemValue),]
+##1.对于有符号的数值
+change<-chan_df[grepl("≥|>|≤|<",chan_df$ItemValue),];unique(change$ItemValue)
+
+change$ItemValue<-str_replace_all(change$ItemValue," ",'')
+change$ItemValue<-str_replace_all(change$ItemValue,"万cfu/ml",'0000')
+change$ItemValue<-str_replace_all(change$ItemValue,"cfu/ml",'')
+change$ItemValue<-str_replace_all(change$ItemValue,"万/ml",'0000')
+change$ItemValue<-str_replace_all(change$ItemValue,"%正常人群分布",'')
+change$ItemValue<-str_replace_all(change$ItemValue,"%",'')
+change$ItemValue<-str_replace_all(change$ItemValue,"只",'')
+change$ItemValue<-str_replace_all(change$ItemValue,"个",'')
+change$ItemValue<-str_replace_all(change$ItemValue,"/LP",'')
+change$ItemValue<-str_replace_all(change$ItemValue,"万",'0000')
+clearchange<-change
+#对大于数值+0.001
+change<-clearchange[grepl("≥|>",clearchange$ItemValue),]
+change$ItemValue<-str_replace_all(change$ItemValue,'>|≥','')
+change$ItemValue<-str_replace_all(change$ItemValue," ",'')
+change$ItemValue<-as.numeric(change$ItemValue)
+change$ItemValue<-change$ItemValue+0.001 ##为了避免卡在临界值
+one1<-change
+#对小于数值-0.001
+change<-clearchange[grepl("≤|<",clearchange$ItemValue),]
+change$ItemValue<-str_replace_all(change$ItemValue,'≤|<','')
+change$ItemValue<-str_replace_all(change$ItemValue," ",'')
+change$ItemValue<-as.numeric(change$ItemValue)
+change$ItemValue<-change$ItemValue-0.001 ##为了避免卡在临界值
+clearchange<-rbind(one1,change) ##num
+
+##对于没有符号的数值,nochangel中范围的值做了改动
+nochange<-chan_df[!grepl("≥|>|≤|<",chan_df$ItemValue),]
+nochange2<-nochange[!grepl("\\d{1,3}-\\d{1,3}",nochange$ItemValue),]
+
+nochange2$ItemValue<-str_replace_all(nochange2$ItemValue," ",'')
+nochange2$ItemValue<-str_replace_all(nochange2$ItemValue,"cfu/ml",'')
+nochange2$ItemValue<-str_replace_all(nochange2$ItemValue,"/ml",'')
+nochange2$ItemValue<-str_replace_all(nochange2$ItemValue,"只",'')
+nochange2$ItemValue<-str_replace_all(nochange2$ItemValue,"万/ml",'0000')
+nochange2$ItemValue<-str_replace_all(nochange2$ItemValue,"CFU/ml",'')
+nochange2$ItemValue<-str_replace_all(nochange2$ItemValue,"%生长",'白分生长')
+nochange2$ItemValue<-str_replace_all(nochange2$ItemValue,"个",'')
+nochange2$ItemValue<-str_replace_all(nochange2$ItemValue,"/LP",'')
+nochange2$ItemValue<-str_replace_all(nochange2$ItemValue,"万",'0000')
+nochange2$ItemValue<-str_replace_all(nochange2$ItemValue,"%",'')
+nochange2$ItemValue<-str_replace_all(nochange2$ItemValue,"CFU",'')
+nochange21<-nochange2[grepl("未生长|无生长|未找到",nochange2$ItemValue),]
+nochange21$ItemValue<-"阴性"
+nochange22<-nochange2[!grepl("未生长|无生长|未找到",nochange2$ItemValue),]
+nochange2<-rbind(nochange21,nochange22)
+
+test<-nochange2[grepl("\\d\\D",nochange2$ItemValue),]
+
+test<-test[!grepl("\\d\\.",test$ItemValue),];unique(test$ItemValue)
+##对于--分割的数字取均值
+nochange1<-nochange[grepl("\\d{1,3}-\\d{1,3}",nochange$ItemValue),]
+nochange1<-nochange1[!grepl("@",nochange1$ItemValue),]
+nochange1$ItemValue<-str_replace_all(nochange1$ItemValue,"/LP",'')
+LL <- sapply(str_split(nochange1$ItemValue,'-'),'[',1)
+UL <- sapply(str_split(nochange1$ItemValue,'-'),'[',2)
+LL<-as.numeric(LL)
+UL<-as.numeric(UL)
+nochange1$ItemValue <- (LL+UL)/2  ##替换  num
+nochange<-rbind(nochange1,nochange2)
+nochange$ItemValue<-str_replace_all(nochange$ItemValue," ",'')
+
+chan_df<-rbind(nochange,clearchange)
+
+bi<-chan_df[grepl("\\D",chan_df$ItemValue),]
+bi<-bi[!grepl("\\.",bi$ItemValue),];unique(bi$ItemValue)
+bi<-bi[!grepl("-\\d",bi$ItemValue),]
+bi$ItemUnit<-paste(bi$ItemUnit,"bi",sep="_")
+labdat_bi<-rbind(bi,labdat_bi)
+
+num1<-chan_df[!grepl("\\D",chan_df$ItemValue),]
+num2<-chan_df[grepl("\\d\\.\\d",chan_df$ItemValue),];unique(num2$ItemValue)
+num3<-chan_df[grepl("-\\d",chan_df$ItemValue),]
+num<-rbind(num1,num2,num3)
+num$ItemUnit<-paste(num$ItemUnit,"num",sep="_")
+labdat_bi<-rbind(num,labdat_bi)
+```
+
+
+```{r labdat减负 去除无参考范围的labdat后按照参考范围界定}
+labdat<-labdat[!grepl("ANA",labdat$ItemName),]
+labdat<-labdat[!grepl("抗核抗体",labdat$ItemName),]
+labdat<-labdat[!labdat$BandRange=="阴性",] #补充
+labdat<-labdat[!labdat$BandRange=="阴性(-)",]
+labdat<-labdat[!labdat$BandRange=="null",]
+labdat<-labdat[!grepl("无凝块|未提示|未查见|正常|淡黄|清|结核菌培养阴性|如检测结果为阳性",labdat$BandRange),]
+labdat<-labdat[!labdat$BandRange==".",] #改
+labdat<-sqldf("select * from labdat order by BandRange ASC")
+```
+
+```{r 此时labdat已经做过改进，对已判断结果做全局替换}
+# test<-labdat[grepl("\\d\\+",labdat$ItemValue),] 
+# test<-labdat[grepl("\\+0",labdat$ItemValue),] #乙肝定量
+
+test<-labdat[grepl("\\d\\+",labdat$ItemValue),];unique(test$ItemValue)
+labdat$ItemValue<-str_replace_all(labdat$ItemValue,"100\\+","100") ##尿检大于100
+unique(labdat$BandRange)
+
+##
+test<-labdat[grepl("\\(\\-\\)|阴性",labdat$ItemValue),] ##对-不能直接换会出问题，负数
+test$ItemValue<-"NEG"
+test$ItemUnit<-paste(test$ItemUnit,"bi",sep="_")
+labdat_bi<-rbind(test,labdat_bi)
+
+test<-labdat[labdat$ItemValue=="-",] ##仅对-或--
+test$ItemValue<-"NEG"
+test$ItemUnit<-paste(test$ItemUnit,"bi",sep="_")
+labdat_bi<-rbind(test,labdat_bi)
+
+test<-labdat[grepl("弱阳|±|Low Positive",labdat$ItemValue),] ;unique(test$ItemValue)
+test$ItemValue<-"POS_WEEK"
+test$ItemUnit<-paste(test$ItemUnit,"bi",sep="_")
+labdat_bi<-rbind(test,labdat_bi)
+
+test<-labdat[grepl("阳性|Medium Positive|\\+",labdat$ItemValue),];unique(test$ItemValue)
+test<-test[!grepl("弱阳",test$ItemValue),]#差点选错,阳性的组合拳
+test$ItemValue<-"POS"
+test$ItemUnit<-paste(test$ItemUnit,"bi",sep="_")
+labdat_bi<-rbind(test,labdat_bi) 
+#131762
+```
+
+
+```{r 减负--AI按照value}
+## AI 
+labdat<-labdat[!grepl("ANA",labdat$ItemName),]
+labdat<-labdat[!grepl("抗核抗体",labdat$ItemName),]
+labdat<-labdat[!labdat$BandRange=="阴性",] #补充
+labdat<-labdat[!labdat$BandRange=="阴性(-)",]
+labdat<-labdat[!labdat$BandRange=="null",]
+labdat<-labdat[!grepl("无凝块|未提示|未查见|正常|淡黄|清|结核菌培养阴性|如检测结果为阳性",labdat$BandRange),]
+labdat<-labdat[!labdat$BandRange==".",] #改
+labdat<-labdat[!grepl("\\(\\-\\)|阴性|弱阳|±|Low Positive|阳性|Medium Positive|\\+",labdat$ItemValue),]
+labdat<-labdat[!labdat$ItemValue=="-",]
+##
+
+pdatAI<-labdat[labdat$ItemUnit=="AI",]
+test<-pdatAI[grepl("-",pdatAI$ItemValue),] ##全都是-剩下的
+test$ItemValue<-"NEG"
+test$ItemUnit<-paste(test$ItemUnit,"bi",sep="_")
+labdat_bi<-rbind(test,labdat_bi)
+
+# # pdatAI<-labdat[grepl("抗双链DNA抗体|抗心磷脂抗体|抗B2糖蛋白1抗体IgG|抗环瓜氨酸肽抗体",labdat$ItemName),];pdatAI$ItemValue;
+# # unique(pdatAI$ItemName)
+# 
+# test<-pdatAI[grepl("- ",pdatAI$ItemValue),];unique(test$ItemUnit) ##妙啊grep- 得出不是数值的变量
+# test$ItemValue<-"NEG"
+# test$ItemUnit<-paste(test$ItemUnit,"bi",sep="_")
+# labdat_bi<-rbind(test,labdat_bi)
+# 
+# # test <- labdat[grepl("-",labdat$ItemValue),];unique(test$ItemUnit)
+# # test <- test[!grepl("- ",test$ItemValue),];unique(test$ItemUnit)
+# 
+# # ###############
+# test<-pdatAI[pdatAI$ItemValue=="未找到",]
+# test$ItemValue<-"normal"
+# test$ItemUnit<-paste(test$ItemUnit,"bi",sep="_")
+# labdat_bi<-rbind(test,labdat_bi)
+# 
+# # test<-labdat[pdatAI$ItemValue=="未找到",]
+# # test$ItemValue<-"normal"
+# # test$ItemUnit<-paste(test$ItemUnit,"bi",sep="_")
+# # labdat_bi<-rbind(test,labdat_bi)
+
+# save(labdat_bi,file="labdat_bifinal.rdata")
+```
+
+```{r 抗体}
+options(scipen=200)
+labdat<-labdat[!grepl("ANA",labdat$ItemName),]
+labdat<-labdat[!grepl("抗核抗体",labdat$ItemName),]
+labdat<-labdat[!labdat$BandRange=="阴性",] #补充
+labdat<-labdat[!labdat$BandRange=="阴性(-)",]
+labdat<-labdat[!labdat$BandRange=="null",]
+labdat<-labdat[!grepl("无凝块|未提示|未查见|正常|淡黄|清|结核菌培养阴性|如检测结果为阳性",labdat$BandRange),]
+labdat<-labdat[!labdat$BandRange==".",] #改
+labdat<-labdat[!grepl("\\(\\-\\)|阴性|弱阳|±|Low Positive|阳性|Medium Positive|\\+",labdat$ItemValue),]
+labdat<-labdat[!labdat$ItemValue=="-",]
+labdat<-labdat[!labdat$ItemUnit=="AI",]
+####
+
+change<-labdat[labdat$ItemName=="抗双链DNA抗体",] #有两个dsDNA不符合下面的规则单独处理
+change<-change[grepl("-2",change$ItemValue),]
+change$ItemValue<-"NEG"
+change$ItemUnit<-paste(change$ItemUnit,"bi",sep="_")
+labdat_bi<-rbind(test,labdat_bi)
+
+test<-labdat[grepl("\\-\\s",labdat$ItemValue),] #找出-空格的值
+test$ItemValue<-"NEG"
+test$ItemUnit<-paste(test$ItemUnit,"bi",sep="_")
+labdat_bi<-rbind(test,labdat_bi)
+
+save(labdat_bi,file="labdat_bifinal.rdata")
+```
+
+##run
+```{r labdat..}
+library(tidyr)
+library(sqldf)
+rm(list = ls())
+options(stringsAsFactors = F)
+library(stringr)
+options(scipen=200)
+```
+
+
+```{r labdat减负2}
+load(file ="labdat_bifinal.rdata")
+load(file="labdat4.rdata")
+labdat<-labdat[!grepl("ANA",labdat$ItemName),]
+labdat<-labdat[!grepl("抗核抗体",labdat$ItemName),]
+labdat<-labdat[!labdat$BandRange=="阴性",] #补充
+labdat<-labdat[!labdat$BandRange=="阴性(-)",]
+labdat<-labdat[!labdat$BandRange=="null",]
+labdat<-labdat[!grepl("无凝块|未提示|未查见|正常|淡黄|清|结核菌培养阴性|如检测结果为阳性",labdat$BandRange),]
+labdat<-labdat[!labdat$BandRange==".",] #改
+labdat<-labdat[!grepl("\\(\\-\\)|阴性|弱阳|±|Low Positive|阳性|Medium Positive|\\+",labdat$ItemValue),]
+labdat<-labdat[!labdat$ItemValue=="-",]
+labdat<-labdat[!labdat$ItemUnit=="AI",]
+labdat<-labdat[!grepl("\\-\\s",labdat$ItemValue),]
+labdat<-labdat[!grepl("抗双链DNA抗体",labdat$ItemName),]
+labdat<-labdat[!grepl("无地址",labdat$ItemValue),] #可删除
+labdat<-sqldf("select * from labdat order by ItemValue ASC")
+```
+
+
+```{r}
+test<-labdat[grepl("\\d{1,5}\\-",labdat$ItemValue),];unique(test$ItemName) ##正则表达筛选值为范围的变量num-
+#选择出需要取均值的变量
+```
+
+##labdat
+```{r 1.透明管型|便脓细胞|便红细胞|镜检上皮细胞|镜检红细胞|镜检白细胞|管型\\(低倍视野\\)|尿比重}
+chan_df<-labdat[grepl("透明管型|便脓细胞|便红细胞|镜检上皮细胞|镜检红细胞|镜检白细胞|颗粒管型|酵母菌|管型\\(低倍视野\\)|尿比重",labdat$ItemName),];unique(chan_df$BandRange)
+
+nochange<-chan_df[!grepl("≥|>|≤|<",chan_df$ItemValue),]
+#对大于数值+0.001
+change<-chan_df[grepl("≥|>",chan_df$ItemValue),]
+change$ItemValue<-str_replace_all(change$ItemValue,'>|≥','')
+change$ItemValue<-str_replace_all(change$ItemValue," ",'')
+change$ItemValue<-as.numeric(change$ItemValue)
+change$ItemValue<-change$ItemValue+0.001 ##为了避免卡在临界值
+one1<-rbind(change,nochange)
+#对小于数值-0.001
+change<-chan_df[grepl("≤|<",chan_df$ItemValue),]
+change$ItemValue<-str_replace_all(change$ItemValue,'≤|<','')
+change$ItemValue<-str_replace_all(change$ItemValue," ",'')
+change$ItemValue<-as.numeric(change$ItemValue)
+change$ItemValue<-change$ItemValue-0.001 ##为了避免卡在临界值
+one1<-rbind(change,one1)
+
+one1$BandRange<-str_replace_all(one1$BandRange,'--','-');unique(one1$BandRange)
+one1$BandRange<-str_replace_all(one1$BandRange,'≤','0-')
+one1$ItemValue<-str_replace_all(one1$ItemValue,'未查见','0')
+one1$ItemValue<-str_replace_all(one1$ItemValue,"查见",'2')
+one1$ItemValue<-str_replace_all(one1$ItemValue,'满视野','100')
+one1$ItemValue<-str_replace_all(one1$ItemValue,'100\\+','100')#红细胞异常值100+
+one1$ItemValue<-str_replace_all(one1$ItemValue,'1-3.','1-3')
+one1$ItemValue<-str_replace_all(one1$ItemValue,'01','0-1')
+one1$ItemValue<-str_replace_all(one1$ItemValue,'360000','100')
+one1$ItemValue<-str_replace_all(one1$ItemValue,'36000','100')
+# a<-one1[one1$ItemName=="镜检红细胞",]
+# unique(a$ItemValue)
+
+change<-one1[grepl("-",one1$ItemValue),]
+LL <- sapply(str_split(change$ItemValue,'-'),'[',1)
+UL <- sapply(str_split(change$ItemValue,'-'),'[',2)
+LL<-as.numeric(LL)
+UL<-as.numeric(UL)
+change$ItemValue <- (LL+UL)/2  ##替换
+nochange<-one1[!grepl("-",one1$ItemValue),]
+one1<-rbind(change,nochange)  ##把范围的值变成均值
+
+oneout1<-one1
+oneout1$ItemUnit<-paste(oneout1$ItemUnit,"num",sep="_")#数值变量
+labdat_bi<-rbind(oneout1,labdat_bi) #加入数值变量到labdat_bi
+
+##bi
+LL <- sapply(str_split(one1$BandRange,'-'),'[',1)
+UL <- sapply(str_split(one1$BandRange,'-'),'[',2)
+LL<-as.numeric(LL)
+UL<-as.numeric(UL)
+one1$ItemValue<-as.numeric(one1$ItemValue)
+one1$ItemValue<-ifelse(one1$ItemValue>UL,"high",ifelse(one1$ItemValue<LL,"low","normal"))
+one1$ItemUnit<-paste(one1$ItemUnit,"bi",sep="_")
+labdat_bi<-rbind(one1,labdat_bi) ##加入二分类变量到labdat_bi
+```
+
+
+```{r labdat减负}
+labdat<-labdat[!grepl("透明管型|便脓细胞|便红细胞|镜检上皮细胞|镜检红细胞|镜检白细胞|颗粒管型|酵母菌|管型\\(低倍视野\\)|尿比重",labdat$ItemName),] #981162
+labdat<-labdat[!grepl("无细胞\\(胸水\\)",labdat$ItemValue),] #981162??有点多
+```
+
+```{r }
+chan_df<-labdat
+nochange<-chan_df[!grepl("≥|>|≤|<",chan_df$ItemValue),]
+nochange$ItemValue<-str_replace_all(nochange$ItemValue,"\\(分级 0\\)","")
+nochange$ItemValue<-str_replace_all(nochange$ItemValue,"2\\.01\\.0","201.0")###异常值处理
+nochange$ItemValue<-str_replace_all(nochange$ItemValue,"1\\:","")
+nochange$ItemValue<-str_replace_all(nochange$ItemValue,"可疑","300")
+nochange$ItemValue<-str_replace_all(nochange$ItemValue,"无尿量","0")
+nochange$ItemValue<-str_replace_all(nochange$ItemValue,"正常","2") #尿胆原专属
+nochange$ItemValue<-str_replace_all(nochange$ItemValue,"Ⅰ","1") 
+nochange$ItemValue<-str_replace_all(nochange$ItemValue,"Ⅱ","2")
+nochange$ItemValue<-str_replace_all(nochange$ItemValue,"Ⅲ","3")
+nochange$ItemValue<-str_replace_all(nochange$ItemValue,"Ⅳ","4")
+nochange$ItemValue<-str_replace_all(nochange$ItemValue," ","")
+nochange<-nochange[!nochange$ItemValue=="null",]
+nochange$ItemValue<-as.numeric(nochange$ItemValue)
+
+labdat1<-nochange
+```
+
+
+```{r}
+chan_df<-labdat[grepl("≥|>|≤|<",labdat$ItemValue),]
+#对大于数值+0.001
+change<-chan_df[grepl("≥|>",chan_df$ItemValue),]
+change$ItemValue<-str_replace_all(change$ItemValue,'>|≥','')
+change$ItemValue<-str_replace_all(change$ItemValue," ",'')
+change$ItemValue<-as.numeric(change$ItemValue)
+change$ItemValue<-change$ItemValue+0.001 ##为了避免卡在临界值
+bind1<-change
+#对小于数值-0.001
+change<-chan_df[grepl("≤|<",chan_df$ItemValue),]
+change$ItemValue<-str_replace_all(change$ItemValue,'≤|<','')
+change$ItemValue<-str_replace_all(change$ItemValue,"<\\.","0.")
+change$ItemValue<-str_replace_all(change$ItemValue," ",'')
+change$ItemValue<-as.numeric(change$ItemValue)
+change$ItemValue<-change$ItemValue-0.001 ##为了避免卡在临界值
+bind2<-change
+one1<-rbind(bind1,bind2)
+
+labdat2<-one1
+
+newlabdat<-rbind(labdat1,labdat2)
+
+##异常负值改为正
+# check<-labdat[grepl("-",labdat$ItemValue),];unique(check$ItemName)
+change<-newlabdat[grepl("总胆汁酸|CK_肌酸激酶|纤维蛋白原水平|纤溶指标|钠|血块强度|血小板功能|13C-呼气试验|谷氨酸脱氢酶",newlabdat$ItemName),]
+change$ItemValue<-str_replace_all(change$ItemValue,"-","")
+nochange<-newlabdat[!grepl("总胆汁酸|CK_肌酸激酶|纤维蛋白原水平|纤溶指标|钠|血块强度|血小板功能|13C-呼气试验|谷氨酸脱氢酶",newlabdat$ItemName),]
+newlabdat<-rbind(change,nochange)
+
+oneout1<-newlabdat
+oneout1$ItemUnit<-paste(oneout1$ItemUnit,"num",sep="_")#数值变量  ##确定是否为数值变量
+labdat_bi<-rbind(oneout1,labdat_bi) #加入数值变量到labdat_bi
+
+save(labdat_bi,newlabdat,file = "newlabdat.Rdata")
+```
+
+```{r newlabdat接替labdat的位置：把所有的value都变成数字}
+load(file = "newlabdat.Rdata") #newlabdat中包含了要取范围数值变量的num成分都是数值
+labdat<-newlabdat
+```
+
+```{r}
+lessdat<-labdat[grepl("≤|<",labdat$BandRange),]  ##有范围的至少一条横杠
+lessdat$BandRange<-str_replace_all(lessdat$BandRange,"\\(-\\)","")
+lessdat$BandRange<-str_replace_all(lessdat$BandRange,"\\(","")
+lessdat$BandRange<-str_replace_all(lessdat$BandRange,"\\)","")
+lessdat$BandRange<-str_replace_all(lessdat$BandRange," ","")
+lessdat$BandRange<-str_replace_all(lessdat$BandRange,"阴性|1:|个斑点|:|MPL/ml|GPL/ml|ng/ml","")
+lessdat$BandRange<-str_replace_all(lessdat$BandRange,"<|≤","0-")
+unique(lessdat$BandRange)
+
+one1<-lessdat
+LL <- sapply(str_split(one1$BandRange,'-'),'[',1)
+UL <- sapply(str_split(one1$BandRange,'-'),'[',2)
+LL<-as.numeric(LL)
+UL<-as.numeric(UL)
+one1$ItemValue<-as.numeric(one1$ItemValue)
+one1$ItemValue<-ifelse(one1$ItemValue>=UL,"high",ifelse(one1$ItemValue<LL,"ns","normal"))
+
+one1$ItemUnit<-paste(one1$ItemUnit,"bi",sep="_")
+table(one1$ItemValue)
+
+oneout1<-one1
+labdat_bi<-rbind(oneout1,labdat_bi) 
+```
+
+```{r}
+moredat<-labdat[grepl("≥|>",labdat$BandRange),]  ##
+moredat$BandRange<-str_replace_all(moredat$BandRange,"阳性:","")
+moredat$BandRange<-str_replace_all(moredat$BandRange,"≥|>","")
+unique(moredat$BandRange)
+
+one1<-moredat
+one1$BandRange<-as.numeric(one1$BandRange)
+one1$ItemValue<-as.numeric(one1$ItemValue)
+one1$ItemValue<-ifelse(one1$ItemValue>=one1$BandRange,"normal",ifelse(one1$ItemValue<one1$BandRange,"low","ns")) #有等号
+
+one1$ItemUnit<-paste(one1$ItemUnit,"bi",sep="_")
+```
+
+```{r --切分}
+labdat<-labdat[!grepl("≤|<|≥|>",labdat$BandRange),] #911272
+onedat<-labdat[grepl("-",labdat$BandRange),];unique(onedat$BandRange)
+onedat$BandRange<-str_replace_all(onedat$BandRange,"阴性",'');unique(onedat$BandRange)
+nochange<-onedat[grepl("--",onedat$BandRange),];unique(nochange$BandRange)
+change<-onedat[!grepl("--",onedat$BandRange),];unique(change$BandRange)
+change$BandRange<-str_replace_all(change$BandRange,"-",'--') ##单个横杠的都没有负数
+onedat<-rbind(nochange,change);unique(onedat$BandRange)
+
+one1<-onedat
+LL <- sapply(str_split(one1$BandRange,'--'),'[',1)
+UL <- sapply(str_split(one1$BandRange,'--'),'[',2)
+LL<-as.numeric(LL)
+UL<-as.numeric(UL)
+one1$ItemValue<-as.numeric(one1$ItemValue)
+one1$ItemValue<-ifelse(one1$ItemValue>UL,"high",ifelse(one1$ItemValue<LL,"low","normal"))
+
+one1$ItemUnit<-paste(one1$ItemUnit,"bi",sep="_")
+table(one1$ItemValue)
+
+oneout1<-one1
+labdat_bi<-rbind(oneout1,labdat_bi) 
+
+unique(onedat$BandRange)
+```
+
+ [1] "雌二醇"               "睾酮"                 "孕酮"                
+ [4] "促黄体生成素"         "β人绒毛膜促性腺激素"  "降钙素原"            
+ [7] "革兰阴性菌脂多糖(鲎)" "戊肝IgG抗体"          "戊肝IgM抗体"         
+[10] "皮质醇"               "低密度脂蛋白"         "真菌(1-3)-β-D葡聚糖" 
+[13] "单纯疱疹2型IgG抗体"   "卵泡生成素"           "β-胶原特殊序列"      
+[16] "降钙素"               "垂体泌乳素"           "血小板最大聚集率"    
+[19] "生长激素"             "骨钙素"               "单纯疱疹1型IgG抗体"  
+[22] "清洁度"     
+
+#"雌二醇"   "睾酮"     "降钙素"   "生长激素" "骨钙素" 与性别有关
+```{r 剩下的逐个清洗范围}
+labdat<-labdat[!grepl("≤|<|≥|>",labdat$BandRange),]
+labdat<-labdat[!grepl("-",labdat$BandRange),];unique(labdat$BandRange);unique(labdat$ItemName)
+```
+
+```{r 与年龄相关}
+##性别相关
+sexrange<-labdat[grepl("男",labdat$BandRange),]
+unique(sexrange$BandRange);unique(sexrange$ItemName)
+load("../1.rawdata/pdat.rdata")
+names(pdat)
+sex<-pdat[,c("BLH","sex")]
+sexrange<-merge(sexrange,sex,by="BLH",x.all=T)
+
+test<-sexrange[sexrange$ItemName=="雌二醇",];unique(test$BandRange)
+test$ItemValue<-as.numeric(test$ItemValue)
+test$ItemValue<-ifelse(test$sex=="女",ifelse(test$ItemValue<=146.8,"low_估计","high_估计"),ifelse(test$ItemValue<73.4,"low",ifelse(test$ItemValue>172,"high","normal")))
+test$ItemUnit<-paste(test$ItemUnit,"bi",sep="_")
+test<-test[,-8]
+labdat_bi<-rbind(test,labdat_bi) 
+table(test$ItemValue)
+
+
+##
+test<-sexrange[sexrange$ItemName=="睾酮",];unique(test$BandRange)
+test$ItemValue<-as.numeric(test$ItemValue)
+test$ItemValue<-ifelse(test$sex=="女",ifelse(test$ItemValue<0.34,"low",ifelse(test$ItemValue>2.6,"high","normal")),ifelse(test$ItemValue<6.07,"low",ifelse(test$ItemValue>27.12,"high","normal")))
+test$ItemUnit<-paste(test$ItemUnit,"bi",sep="_")
+test<-test[,-8]
+labdat_bi<-rbind(test,labdat_bi) 
+table(test$ItemValue)
+
+#"雌二醇"   "睾酮"     "降钙素"   "生长激素" "骨钙素" 与性别有关
+test<-sexrange[sexrange$ItemName=="降钙素",];unique(test$BandRange)
+test<-sexrange[sexrange$BandRange=="男小于8.4;女小于5.0",];unique(test$BandRange)
+test$ItemValue<-as.numeric(test$ItemValue)
+test$ItemValue<-ifelse(test$sex=="女",ifelse(test$ItemValue<=5.0,"normal","high"),ifelse(test$ItemValue<=8.4,"normal","high"))
+test$ItemUnit<-paste(test$ItemUnit,"bi",sep="_")
+test<-test[,-8]
+labdat_bi<-rbind(test,labdat_bi) 
+table(test$ItemValue)
+
+test<-sexrange[sexrange$ItemName=="降钙素",];unique(test$BandRange)
+test<-sexrange[sexrange$BandRange=="男小于9.52;女小于6.4",];unique(test$BandRange)
+test$ItemValue<-as.numeric(test$ItemValue)
+test$ItemValue<-ifelse(test$sex=="女",ifelse(test$ItemValue<=6.4,"normal","high"),ifelse(test$ItemValue<=9.52,"normal","high"))
+test$ItemUnit<-paste(test$ItemUnit,"bi",sep="_")
+test<-test[,-8]
+labdat_bi<-rbind(test,labdat_bi) 
+table(test$ItemValue)
+```
+ [1] "孕酮"                 "促黄体生成素"         "β人绒毛膜促性腺激素" 
+ [4] "降钙素原"             "革兰阴性菌脂多糖(鲎)" "戊肝IgG抗体"         
+ [7] "戊肝IgM抗体"          "皮质醇"               "低密度脂蛋白"        
+[10] "真菌(1-3)-β-D葡聚糖"  "单纯疱疹2型IgG抗体"   "卵泡生成素"          
+[13] "β-胶原特殊序列"       "垂体泌乳素"           "血小板最大聚集率"    
+[16] "单纯疱疹1型IgG抗体"   "清洁度"       
+
+
+```{r 与年龄无关}
+complexrange<-labdat[!grepl("男",labdat$BandRange),];unique(complexrange$BandRange);unique(complexrange$ItemName)
+
+test<-complexrange[complexrange$ItemName=="戊肝IgM抗体",];unique(test$BandRange)
+test$ItemValue<-as.numeric(test$ItemValue)
+test$ItemValue<-ifelse(test$ItemValue<=0.79,"NEG",ifelse(test$ItemValue>=0.79,"POS","POS_WEEK"))
+test$ItemUnit<-paste(test$ItemUnit,"bi",sep="_")
+labdat_bi<-rbind(test,labdat_bi) 
+table(test$ItemValue)
+
+test<-complexrange[complexrange$ItemName=="皮质醇",];unique(test$BandRange)
+test$ItemValue<-as.numeric(test$ItemValue)
+test$ItemValue<-ifelse(test$ItemValue<6.7,"low",ifelse(test$ItemValue>22.6,"high","normal"))
+test$ItemUnit<-paste(test$ItemUnit,"bi",sep="_")
+labdat_bi<-rbind(test,labdat_bi) 
+table(test$ItemValue) ###皮质醇好低
+
+# 低密度脂蛋白
+test<-complexrange[complexrange$ItemName=="低密度脂蛋白",];unique(test$BandRange)
+test$ItemValue<-as.numeric(test$ItemValue)
+test$ItemValue<-ifelse(test$ItemValue<=3.4,"normal","high") ##脂蛋白
+test$ItemUnit<-paste(test$ItemUnit,"bi",sep="_")
+labdat_bi<-rbind(test,labdat_bi) 
+table(test$ItemValue) ###皮质醇好低
+
+test<-complexrange[complexrange$ItemName=="真菌(1-3)-β-D葡聚糖",];unique(test$BandRange)
+test$ItemValue<-as.numeric(test$ItemValue)
+test$ItemValue<-ifelse(test$ItemValue<100.5,"NEG",ifelse(test$ItemValue>151.5,"POS","POS_WEEK")) ##
+test$ItemUnit<-paste(test$ItemUnit,"bi",sep="_")
+labdat_bi<-rbind(test,labdat_bi) 
+table(test$ItemValue) #
+
+test<-complexrange[complexrange$ItemName=="单纯疱疹2型IgG抗体",];unique(test$BandRange)
+test$ItemValue<-as.numeric(test$ItemValue)
+test$ItemValue<-ifelse(test$ItemValue<0.6,"NEG",ifelse(test$ItemValue>1.0,"POS","POS_WEEK")) ##
+test$ItemUnit<-paste(test$ItemUnit,"bi",sep="_")
+labdat_bi<-rbind(test,labdat_bi) 
+table(test$ItemValue) #
+
+test<-complexrange[complexrange$ItemName=="单纯疱疹1型IgG抗体",];unique(test$BandRange)
+test$ItemValue<-as.numeric(test$ItemValue)
+test$ItemValue<-ifelse(test$ItemValue<0.6,"NEG",ifelse(test$ItemValue>1.0,"POS","POS_WEEK")) ##
+test$ItemUnit<-paste(test$ItemUnit,"bi",sep="_")
+labdat_bi<-rbind(test,labdat_bi) 
+table(test$ItemValue) #
+
+```
+
+
+```{r}
+test<-complexrange[complexrange$ItemName=="垂体泌乳素",];unique(test$BandRange)
+test$ItemValue<-as.numeric(test$ItemValue)
+test$ItemValue<-ifelse(test$ItemValue<26.7,"normal","high") ##
+test$ItemUnit<-paste(test$ItemUnit,"bi",sep="_")
+labdat_bi<-rbind(test,labdat_bi) 
+table(test$ItemValue) #
+
+test<-complexrange[complexrange$ItemName=="血小板最大聚集率",];unique(test$BandRange)
+test$ItemValue<-as.numeric(test$ItemValue)
+test$ItemValue<-ifelse(test$ItemValue<26.7,"normal","high") ##
+test$ItemUnit<-paste(test$ItemUnit,"bi",sep="_")
+labdat_bi<-rbind(test,labdat_bi) 
+table(test$ItemValue) #
+
+test<-complexrange[complexrange$ItemName=="清洁度",];unique(test$BandRange)
+test$ItemValue<-as.numeric(test$ItemValue)
+test$ItemValue<-ifelse(test$ItemValue<=2,"normal","POS") ##
+test$ItemUnit<-paste(test$ItemUnit,"bi",sep="_")
+labdat_bi<-rbind(test,labdat_bi) 
+table(test$ItemValue) #
+
+##bugs
+nochange<-labdat_bi[!labdat_bi$ItemName=="氧分压",]
+change<-labdat_bi[labdat_bi$ItemName=="氧分压",];unique(change$BandRange)
+change1<-change[change$BandRange=="5--60",]
+change1$ItemName<-"氧分压静脉"
+change2<-change[change$BandRange=="80--100",]
+change1$ItemName<-"氧分压动脉"
+change3<-change[change$BandRange=="null",] ##可能错误
+change3$ItemName<-"氧分压静脉"
+labdat_bi<-rbind(nochange,change1,change2,change3)
+
+change<-labdat_bi[labdat_bi$ItemName=="EB病毒DNA",];unique(change$BandRange)
+
+save(labdat_bi,file="finallabdat_bi.Rdata")
+```
+
+
+```{r }
+library(tidyr)
+library(sqldf)
+rm(list = ls())
+options(stringsAsFactors = F)
+library(stringr)
+options(scipen=200)
+```
+
+```{r}
+load(file="labdat4.rdata")
+test<-labdat[labdat$BLH=="3000009328",]
+
+load(file="finallabdat_bi.Rdata")
+labdat_bi<-rbind(labdat_bi,labdat)
+```
+
+```{r 时间变量处理}
+labdat_bi$labid<-paste(labdat_bi$ItemName,labdat_bi$ItemUnit,sep = "_")
+
+##2000+变量
+
+labdat_bi<-sqldf("SELECT * FROM labdat_bi ORDER BY BLH,PublishDate,ItemName")
+load(file="../1.rawdata/pdat.rdata")
+colnames(pdat)
+inhostime<-pdat[,c("BLH","InHospitalDate")]
+labdat_bi_time<-merge(labdat_bi,inhostime,by="BLH",all.x = T)
+
+# test$PublishDate1<-as.POSIXct(test$PublishDate,tz="","%Y-%m-%d %H:%M")
+labdat_bi_time$InHospitalDate<-strptime(labdat_bi_time$InHospitalDate,format="%Y-%m-%d %H:%M:%S")
+labdat_bi_time$PublishDate<-strptime(labdat_bi_time$PublishDate,format="%Y-%m-%d %H:%M:%S")
+labdat_bi_time$hour<-round(labdat_bi_time$PublishDate-labdat_bi_time$InHospitalDate,3)
+labdat_bi_time$day<-ceiling((labdat_bi_time$PublishDate-labdat_bi_time$InHospitalDate)/24) #天花板
+labdat_bi_time$week<-ceiling((labdat_bi_time$PublishDate-labdat_bi_time$InHospitalDate)/(24*7))
+#天花板
+head(labdat_bi_time)
+table(labdat_bi_time$week)
+prop.table(table(labdat_bi_time$week)) 
+#75%的检查都在第一周完成
+
+####
+summary(labdat_bi_time)
+
+labdat_bi_time$PublishDate<-as.character(labdat_bi_time$PublishDate) #date的list转化为文本
+labdat_bi_time$InHospitalDate<-as.character(labdat_bi_time$InHospitalDate) 
+labdat_bi_time$hour<-as.numeric(labdat_bi_time$hour) 
+labdat_bi_time$day<-as.numeric(labdat_bi_time$day)     
+labdat_bi_time$week<-as.numeric(labdat_bi_time$week) ##sqldf cant work with difftime##
+
+#date的list转化为文本
+labdat_bi_time<-sqldf("SELECT * FROM labdat_bi_time ORDER BY PublishDate")
+
+save(labdat_bi_time,file="labdat_time.Rdata")  ##3029970
+```
+
+
+```{r 检查数据}
+# # 检验
+# test<-labdat_bi_time[labdat_bi_time$hour<10,]
+# test<-labdat_bi_time[labdat_bi_time$hour=="8.536",]
+# # unique(test$BLH) # 3000158890
+test<-labdat_bi_time[labdat_bi_time$BLH=="3000009328",]
+
+# labdat_bi_timehour<-sqldf("SELECT * FROM labdat_bi_time ORDER BY hour")
+# test1<-labdat_bi_time[labdat_bi_time$hour=="8.536",]
+# test2<-labdat_bi_timehour[labdat_bi_timehour$BLH=="3000009328",]
+```
+
+
+```{r }
+library(tidyr)
+library(sqldf)
+rm(list = ls())
+options(stringsAsFactors = F)
+library(stringr)
+options(scipen=200)
+```
+
+```{r 从这里开始!!!--基线资料展开 更新到2020年10月底}
+load(file="labdat_time.Rdata")
+
+#补丁
+labdat_bi_time$labid<-str_replace_all(labdat_bi_time$labid,"/l","/L")
+labdat_bi_time$ItemUnit<-str_replace_all(labdat_bi_time$ItemUnit,"/l","/L")
+
+#脑脊液率
+labdat_bi_time$labid<-str_replace_all(labdat_bi_time$labid,"/ml","/mL")
+labdat_bi_time$ItemUnit<-str_replace_all(labdat_bi_time$ItemUnit,"/ml","/mL")
+
+#脑脊液率
+# change<-labdat_bi_time[grepl("脑脊液",labdat_bi_time$ItemName),]
+# 
+# change<-labdat_bi_time[grepl("2.50--4.50",labdat_bi_time$BandRange),]
+# change<-labdat_bi_time[grepl("120--132",labdat_bi_time$BandRange),]
+
+load(file="../1.rawdata/orderdat.rdata")
+names(orderdat)
+```
+
+3000694	3000219985	2020-09-30 22:26:17	X-NK	凝块	无	null	无凝块	凝块_null	2020-09-29 09:23:00	37.055	2	1
+3000695	3000219985	2020-09-30 22:26:17	PSCS	潘式试验(脑脊液)	NEG	null_bi	阴性	潘式试验(脑脊液)_null_bi	2020-09-29 09:23:00	37.055	2	1
+3000696	3000219985	2020-09-30 22:26:17	PSCS	潘式试验(脑脊液)	阴性	null	阴性	潘式试验(脑脊液)_null	2020-09-29 09:23:00	37.055	2	1
+3000697	3000219985	2020-09-30 22:26:17	HXB	红细胞	2	10^6/L_bi	null	红细胞_10^6/L_bi	2020-09-29 09:23:00	37.055	2	1
+3000698	3000219985	2020-09-30 22:26:17	HXB	红细胞	2	10^6/L	null	红细胞_10^6/L	2020-09-29 09:23:00	37.055	2	1
+3000699	3000219985	2020-09-30 22:26:17	NJYBXB	脑脊液白细胞数	未查见	10^6/L_bi	null	脑脊液白细胞数_10^6/L_bi	2020-09-29 09:23:00	37.055	2	1
+3000700	3000219985	2020-09-30 22:26:17	NJYBXB	脑脊液白细胞数	未查见	10^6/L	null	脑脊液白细胞数_10^6/L	2020-09-29 09:23:00	37.055	2	1
+3000701	3000219985	2020-09-30 22:26:17	X-TMD	透明度	清	null	清	透明度_null	2020-09-29 09:23:00	37.055	2	1
+3000702	3000219985	2020-09-30 22:26:17	X-YS	颜色	无色	null	淡黄
+
+
+3000840	3000219985	2020-09-30 22:52:23	csfp	微量总蛋白	263	mg/L_num	≤500	微量总蛋白_mg/L_num	2020-09-29 09:23:00	37.490	2	1
+3000843	3000219985	2020-09-30 22:52:23	CL	氯	131	mmol/L_num	120--132	氯_mmol/L_num	2020-09-29 09:23:00	37.490	2	1
+3000846	3000219985	2020-09-30 22:52:23	GLU	葡萄糖	3.44	mmol/L_num	2.5--4.4	葡萄糖_mmol/L_num	2020-09-29 09:23:00	37.490	2	1
+
+3000788	3000219985	2020-09-30 22:31:29	a1qdb	α1球蛋白(电泳)	5.49	%_num	2.68--5.03	α1球蛋白(电泳)_%_num	2020-09-29 09:23:00	37.141	2	1
+3000791	3000219985	2020-09-30 22:31:29	a2qdb	α2球蛋白(电泳)	8.02	%_num	4.93--10.19	α2球蛋白(电泳)_%_num	2020-09-29 09:23:00	37.141	2	1
+3000794	3000219985	2020-09-30 22:31:29	b1qdb	β1球蛋白(电泳)	5.83	%_num	5.24--9.03	β1球蛋白(电泳)_%_num	2020-09-29 09:23:00	37.141	2	1
+3000797	3000219985	2020-09-30 22:31:29	b2qdb	β2球蛋白(电泳)	3.13	%_num	1.46--6.54	β2球蛋白(电泳)_%_num	2020-09-29 09:23:00	37.141	2	1
+3000800	3000219985	2020-09-30 22:31:29	gqdb	γ球蛋白(电泳)	31.46	%_num	9.81--19.81	γ球蛋白(电泳)_%_num	2020-09-29 09:23:00	37.141	2	1
+3000813	3000219985	2020-09-30 22:31:29	ALB	白蛋白(电泳)	46.07	%_num	55.19--69.98
+##
+3000802	3000219985	2020-09-30 22:31:29	mygddyiga	免疫固定电泳IgA	NEG	null_bi	阴性	免疫固定电泳IgA_null_bi	2020-09-29 09:23:00	37.141	2	1
+3000803	3000219985	2020-09-30 22:31:29	mygddyiga	免疫固定电泳IgA	阴性	null	阴性	免疫固定电泳IgA_null	2020-09-29 09:23:00	37.141	2	1
+3000804	3000219985	2020-09-30 22:31:29	mygddyigg	免疫固定电泳IgG	NEG	null_bi	阴性	免疫固定电泳IgG_null_bi	2020-09-29 09:23:00	37.141	2	1
+3000805	3000219985	2020-09-30 22:31:29	mygddyigg	免疫固定电泳IgG	阴性	null	阴性	免疫固定电泳IgG_null	2020-09-29 09:23:00	37.141	2	1
+3000806	3000219985	2020-09-30 22:31:29	mygddyigm	免疫固定电泳IgM	NEG	null_bi	阴性	免疫固定电泳IgM_null_bi	2020-09-29 09:23:00	37.141	2	1
+3000807	3000219985	2020-09-30 22:31:29	mygddyigm	免疫固定电泳IgM	阴性	null	阴性	免疫固定电泳IgM_null	2020-09-29 09:23:00	37.141	2	1
+3000808	3000219985	2020-09-30 22:31:29	mygddykap	免疫固定电泳kap	NEG	null_bi	阴性	免疫固定电泳kap_null_bi	2020-09-29 09:23:00	37.141	2	1
+3000809	3000219985	2020-09-30 22:31:29	mygddykap	免疫固定电泳kap	阴性	null	阴性	免疫固定电泳kap_null	2020-09-29 09:23:00	37.141	2	1
+3000810	3000219985	2020-09-30 22:31:29	mygddylam	免疫固定电泳lam	NEG	null_bi	阴性	免疫固定电泳lam_null_bi	2020-09-29 09:23:00	37.141	2	1
+3000811	3000219985	2020-09-30 22:31:29	mygddylam	免疫固定电泳lam	阴性	null	阴性
+
+##
+3000887	3000219985	2020-09-30 23:17:13	IGG4	免疫球蛋白G4	0.003	g/L_num	0.03--2.01	免疫球蛋白G4_g/L_num	2020-09-29 09:23:00	37.904	2	1
+3000886	3000219985	2020-09-30 23:17:13	IGG4	免疫球蛋白G4	low	g/L_bi	0.03--2.01	免疫球蛋白G4_g/L_bi	2020-09-29 09:23:00	37.904	2	1
+3000888	3000219985	2020-09-30 23:17:13	IGG4	免疫球蛋白G4	0.003	g/L	0.03--2.01	免疫球蛋白G4_g/L	2020-09-29 09:23:00	37.904	2	1
+
+```{r  脑脊液\胸腹水。。。}
+# 脑脊液
+# # csfp	
+# LP<-orderdat[grepl("腰",orderdat$OrderContent),]
+# DY<-orderdat[grepl("固定电泳",orderdat$OrderContent),]
+# BLH<-unique(labdat_bi_time$BLH) ##5948BLH
+# testblh<-labdat_bi_time[grepl("3000221615",labdat_bi_time$BLH),]
+
+##
+notest<-labdat_bi_time[!grepl("脑脊液蛋白",labdat_bi_time$ItemName),]
+test<-labdat_bi_time[grepl("脑脊液蛋白",labdat_bi_time$ItemName),]
+test$ItemName<-"脑脊液微量总蛋白"
+labdat_bi_time<-rbind(notest,test)
+
+
+##做过脑脊液检查者
+test<-labdat_bi_time[grepl("潘式试验\\(脑脊液\\)",labdat_bi_time$ItemName),]
+test$`脑脊液`<-"脑脊液"
+test<-test[,c(1,2,13)]
+names(test)
+test1<-sqldf("SELECT * FROM test GROUP BY BLH,PublishDate")
+
+test<-sqldf("SELECT * FROM labdat_bi_time where ItemName='氯' AND BandRange='120--132'")
+test$`脑脊液`<-"脑脊液"
+test<-test[,c(1,2,13)]
+names(test)
+test2<-sqldf("SELECT * FROM test GROUP BY BLH,PublishDate")
+
+njytestT<-rbind(test1,test2)
+njytestT<-sqldf("SELECT * FROM njytestT GROUP BY BLH,PublishDate")
+
+# ##在做过脑脊液的病人中替换
+# njy<-orderdat[grepl("脑脊液",orderdat$OrderContent),]
+# njy<-unique(njy$BLH)
+# change<-labdat_bi_time[labdat_bi_time$BLH%in%njy,]
+# nochange<-labdat_bi_time[!labdat_bi_time$BLH%in%njy,]
+
+labdat_bi_time$MC<-paste(labdat_bi_time$BLH,labdat_bi_time$PublishDate)
+njytestT$MC<-paste(njytestT$BLH,njytestT$PublishDate)
+njytestT<-njytestT[,c(3,4)]
+labdat_bi_time<-merge(labdat_bi_time,njytestT,by="MC",all.x = T)
+
+save(labdat_bi_time,file="labdat_bi_time_save.Rdata")
+load(file="labdat_bi_time_save.Rdata")
+##
+change<-labdat_bi_time[!is.na(labdat_bi_time$`脑脊液`),]
+change$ItemName<-paste(change$`脑脊液`,change$ItemName)
+change$labid<-paste(change$`脑脊液`,change$labid)
+nochange<-labdat_bi_time[is.na(labdat_bi_time$`脑脊液`),]
+labdat_bi_time<-rbind(change,nochange) 
+labdat_bi_time<-labdat_bi_time[,2:13]
+
+# test<-labdat_bi_time[grepl("微量总蛋白",labdat_bi_time$ItemName),]
+# testblh<-labdat_bi_time[grepl("3000068098",labdat_bi_time$BLH),]
+
+
+### 尿量 微量总蛋白
+test<-labdat_bi_time[grepl("尿量",labdat_bi_time$ItemName),]
+test$`尿`<-"尿"
+test<-test[,c(1,2,13)]
+names(test)
+test1<-sqldf("SELECT * FROM test GROUP BY BLH,PublishDate")
+
+njytestT<-test1
+njytestT<-sqldf("SELECT * FROM njytestT GROUP BY BLH,PublishDate")
+
+labdat_bi_time$MC<-paste(labdat_bi_time$BLH,labdat_bi_time$PublishDate)
+njytestT$MC<-paste(njytestT$BLH,njytestT$PublishDate)
+njytestT<-njytestT[,c(3,4)]
+labdat_bi_time<-merge(labdat_bi_time,njytestT,by="MC",all.x = T)
+
+change<-labdat_bi_time[!is.na(labdat_bi_time$`尿`),]
+change$ItemName<-paste(change$`尿`,change$ItemName)
+change$labid<-paste(change$`尿`,change$labid)
+nochange<-labdat_bi_time[is.na(labdat_bi_time$`尿`),]
+labdat_bi_time<-rbind(change,nochange)
+labdat_bi_time<-labdat_bi_time[,2:13]
+
+##胸腹水
+### 李凡他实验
+test<-labdat_bi_time[grepl("李凡他实验",labdat_bi_time$ItemName),]
+test$`胸腹水`<-"胸腹水"
+test<-test[,c(1,2,13)]
+names(test)
+test1<-sqldf("SELECT * FROM test GROUP BY BLH,PublishDate")
+
+### 胸腹水
+test<-labdat_bi_time[grepl("氯不明单位",labdat_bi_time$ItemName),]
+test$`胸腹水`<-"胸腹水"
+test<-test[,c(1,2,13)]
+names(test)
+test2<-sqldf("SELECT * FROM test GROUP BY BLH,PublishDate")
+
+### 胸水涂片
+test<-labdat_bi_time[!grepl("\\D",labdat_bi_time$ItemId),]
+test<-test[grepl("\\d",test$ItemId),]
+test<-test[!grepl("\\d{3}",test$ItemId),]
+test$`胸腹水`<-"胸腹水"
+test<-test[,c(1,2,13)]
+names(test)
+test3<-sqldf("SELECT * FROM test GROUP BY BLH,PublishDate")
+
+njytestT<-rbind(test1,test2,test3)
+njytestT<-sqldf("SELECT * FROM njytestT GROUP BY BLH,PublishDate")
+
+labdat_bi_time$MC<-paste(labdat_bi_time$BLH,labdat_bi_time$PublishDate)
+njytestT$MC<-paste(njytestT$BLH,njytestT$PublishDate)
+njytestT<-njytestT[,c(3,4)]
+labdat_bi_time<-merge(labdat_bi_time,njytestT,by="MC",all.x = T)
+
+change<-labdat_bi_time[!is.na(labdat_bi_time$`胸腹水`),]
+change$ItemName<-paste(change$`胸腹水`,change$ItemName)
+change$labid<-paste(change$`胸腹水`,change$labid)
+nochange<-labdat_bi_time[is.na(labdat_bi_time$`胸腹水`),]
+labdat_bi_time<-rbind(change,nochange)
+labdat_bi_time<-labdat_bi_time[,2:13]
+
+labdat_bi_time$ItemName<-str_replace_all(string = labdat_bi_time$ItemName," ","_")
+save(labdat_bi_time,file="labdat_bi_time_save.Rdata")
+```
+
+
+```{r }
+library(tidyr) 
+library(sqldf)
+rm(list = ls())
+options(stringsAsFactors = F)
+library(stringr)
+options(scipen=200)
+```
+
+
+```{r 上限矫正更新到2020年10月底}
+load(file="labdat_bi_time_save.Rdata")
+######
+##-改成--
+labdat_bi_time_num<-labdat_bi_time[grepl("_num",labdat_bi_time$labid),]
+change<-labdat_bi_time_num[grepl("\\d-\\d",labdat_bi_time_num$BandRange),];unique(change$BandRange)
+nochange<-labdat_bi_time_num[!grepl("\\d-\\d",labdat_bi_time_num$BandRange),]
+change<-str_replace_all(change$BandRange,"-","--")
+labdat_bi_time_num<-rbind(change,nochange)
+
+library(tidyr)
+need<-unique(labdat_bi_time_num$ItemId)
+names(labdat_bi_time_num)
+labidban<-labdat_bi_time_num[,c("labid","BandRange")]
+labidban<-sqldf("SELECT * FROM labidban GROUP BY labid,BandRange")
+bandcount<-sqldf("SELECT *,COUNT(*) FROM labidban GROUP BY labid ORDER BY labid")
+more1<-bandcount[bandcount$`COUNT(*)`>1,]
+change<-more1$labid
+labidban<-labidban[labidban$labid%in%change,] ##有多种单位的数值
+labidban<-labidban[!grepl("阴性|null",labidban$BandRange),]
+
+n<-dput(unique(labidban$labid))
+###对num的值进行校正 很重要!!!
+labdat_bi_time_num<-labdat_bi_time[grepl("_num",labdat_bi_time$labid),]
+labdat_bi_time_num_no<-labdat_bi_time[!grepl("_num",labdat_bi_time$labid),]
+
+
+##按照上限矫正
+ULadj=function(a){
+change<-labdat_bi_time_num[labdat_bi_time_num$labid==a,]
+nochange<-labdat_bi_time_num[!labdat_bi_time_num$labid==a,]
+change$BandRange<-str_replace_all(change$BandRange,"≤","0--")
+UL <- sapply(str_split(change$BandRange,'--'),'[',2)
+UL<-as.numeric(UL)
+MIN=min(UL)
+change$ItemValue<-as.numeric(change$ItemValue)
+change$ItemValue<-change$ItemValue/UL*MIN
+labdat_bi_time_num<-rbind(change,nochange)
+}
+
+n<-c("总补体活性CH50_U/ML_num","肌酸激酶(急)_U/L_num","甲状腺素_nmol/L_num", "N端脑利钠肽_pg/ml_num","TNF-a_pg/ml_num","α-L-岩藻糖苷酶_U/L_num","三碘甲状腺原氨酸_nmol/L_num","促甲状腺激素_mIU/L_num", "免疫球蛋白E_IU/ml_num","尿酸_umol/L_num","游离三碘甲状原氨酸_pmol/L_num", "游离甲状腺素_pmol/L_num","甲状腺素_nmol/L_num")
+for(i in n){labdat_bi_time_num<-ULadj(i)}
+
+labdat_bi_time<-rbind(labdat_bi_time_num,labdat_bi_time_num_no)
+```
+
+925	肌酸激酶(急)_U/L	30--135
+926	肌酸激酶(急)_U/L	55--170
+914	肌红蛋白_ng/ml	0--107
+915	肌红蛋白_ng/ml	≤70
+898	纤维连接蛋白_mg/L	246--652
+899	纤维连接蛋白_mg/L	250--400
+821	碱性磷酸酶_U/L	30--120
+822	碱性磷酸酶_U/L	38--126
+823	碱性磷酸酶_U/L	40--150
+824	碱性磷酸酶_U/L	42--142
+813	直接胆红素_umol/L	0--3.4
+814	直接胆红素_umol/L	1.7--6.8
+776	甲状腺素_nmol/L	69.97--152.52
+777	甲状腺素_nmol/L	78.38--157.4
+778	甲状腺素_nmol/L	91.88--167.77
+779	甲状腺素_nmol/l	66--181
+780	甲状腺素_nmol/l	78--157
+734	游离甲状腺素_pmol/L	7.64--16.03
+735	游离甲状腺素_pmol/L	7.85--14.41
+736	游离甲状腺素_pmol/L	9.14--15.44
+737	游离甲状腺素_pmol/l	10.76--24.44
+738	游离甲状腺素_pmol/l	7.85--14.41
+528	总补体活性CH50_U/ML	23--46
+529	总补体活性CH50_U/ML	50--100
+508	性激素结合球蛋白_nmol/L	13.3-89.5
+509	性激素结合球蛋白_nmol/L	18.2-135.5
+440	尿淀粉酶_U/L	0--450
+441	尿淀粉酶_U/L	32--641
+132	N端脑利钠肽_pg/ml	0--450
+133	N端脑利钠肽_pg/ml	≤125
+61	EB病毒DNA_copies/mL	<400
+62	EB病毒DNA_copies/mL	<5000
+
+```{r}
+# labdat_bi_time<-labdat_bi_time[,-c(2,9)] ##里面有list存在所以长度不对
+labdat_1w<-labdat_bi_time[labdat_bi_time$week==1,]
+labdat_2w<-labdat_bi_time[labdat_bi_time$week==2,]
+labdat_2w<-rbind(labdat_1w,labdat_2w)
+labdat_bi_BASE_2w<-sqldf("SELECT * FROM labdat_2w GROUP BY BLH,labid ORDER BY PublishDate")
+
+labdat_SP_2w <- labdat_bi_BASE_2w[,c(1,5,8)] %>% spread(key=labid, value=ItemValue)
+
+labdat_bi_BASE_all<-sqldf("SELECT * FROM labdat_bi_time GROUP BY BLH,labid ORDER BY PublishDate")
+labdat_SP_all <- labdat_bi_BASE_all[,c(1,5,8)] %>% spread(key=labid, value=ItemValue)
+
+load(file="labdat_SP.Rdata")
+save(labdat_SP_2w,file="final_labdat_SP_2w.Rdata")
+save(labdat_SP_all,file="final_labdat_SP_all.Rdata")
+
+alltest<-data.frame(at=colnames(labdat_SP))
+
+library(openxlsx)
+alltest<-sqldf("SELECT * FROM labdat_bi_time GROUP BY labid,BandRange")
+write.xlsx(alltest,file="alltest.xlsx")
+```
+
+

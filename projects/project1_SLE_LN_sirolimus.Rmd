@@ -1,0 +1,72 @@
+---
+title: "newrmd"
+author: "Danty_Zhang"
+date: "2020/10/30"
+output: html_document
+---
+```{r }
+library(tidyr)
+library(sqldf)
+library(openxlsx)
+options(stringsAsFactors = F)
+```
+
+```{r thyUS甲状腺超声数据分为SLE组和非SLE组}
+rm(list = ls())
+data<-read.xlsx("西罗莫司-LN.xlsx",sheet =1,rowNames = F)
+nname<-unique(data$name)
+
+##用过西罗莫司的姓名--病人信息及每次住院blh
+load(file="../1.rawdata/pdat.rdata")
+npdat<-pdat[pdat$GivenName %in% nname,]
+npdat<-sqldf("SELECT * FROM npdat GROUP BY BLH")
+nblh<-unique(npdat$BLH)
+
+##用过西罗莫司的姓名--每次住院blh对应的实验室检查
+load(file="../6.labdat/final_labdat_SP_2w.Rdata")
+nlabdat<-labdat_SP_2w[labdat_SP_2w$BLH %in% nblh,]
+labitem<-read.xlsx("实验室检查_need.xlsx",sheet =1,rowNames = F)
+labitem<-labitem[labitem$need==1,]
+labitem<-na.omit(labitem)
+labitem<-labitem$BLH
+labitem<-c("BLH",labitem)
+nlabdat<-nlabdat[,labitem]
+labdat<-colnames(nlabdat)
+write.xlsx(labdat,file="实验室检查.xlsx")
+
+ndat<-merge(nlabdat,npdat,by="BLH",all.x=T)
+
+##每次住院用药的第一个医嘱，如没有写医嘱则没有开具
+load(file="../1.rawdata/orderdat.rdata")
+data<-orderdat[grep("西罗莫司|雷帕鸣|赛莫司",orderdat$OrderContent),]
+data<-sqldf("SELECT * FROM data ORDER BY BeginDate") 
+data<-sqldf("SELECT * FROM data GROUP BY BLH") 
+fdat<-merge(ndat,data,by="BLH",all.x =T)
+
+fdat<-sqldf("SELECT * FROM fdat ORDER BY GivenName,InHospitalDate") 
+colnames(data)
+firstdate<-fdat[,c("BLH","GivenName","BeginDate")]
+firstdate1<-sqldf("SELECT * FROM firstdate GROUP BY GivenName")
+colnames(firstdate1)[3]<-"first_xlms_date"
+fdat<-merge(fdat,firstdate1,by="GivenName",all.x =T)
+
+##SLEDAI
+load(file="../1.rawdata/orderdat.rdata")
+sledai<-orderdat[grep("sledai|SLEDAI",orderdat$OrderContent),]
+sledai<-sledai[,c(1,3)]
+sledai<-sqldf("SELECT * FROM sledai GROUP BY BLH") 
+fdat<-merge(fdat,sledai,by="BLH",all.x =T)
+
+
+##biopsy
+LNbiopsy<-read.xlsx("../8.omicsdat_biopsy/BLHbiopsydat.xlsx",sheet =1,rowNames = F)
+LNbiopsy<-LNbiopsy[,c(1:58)]
+fdat<-merge(fdat,LNbiopsy,by="BLH",all.x =T)
+colnames(fdat)
+
+
+
+write.xlsx(fdat,file="西罗莫司数据.xlsx")
+```
+
+
